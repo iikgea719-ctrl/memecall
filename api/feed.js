@@ -6,22 +6,19 @@ export default async function handler(req, res) {
         });
     }
 
-    const apiKey = process.env.SORSA_API_KEY;
+    const query = req.query.q || "memecoin";
+    const sorsaKey = process.env.SORSA_API_KEY;
+    const twitterKey = process.env.TWITTERAPI_IO_KEY;
 
-    const query = req.query.q || "memecoin OR solana OR pump.fun";
-
-    const activeSources = [];
-    const backupSources = [];
-
+    // API 1: SORSA
     try {
-        // API 1 - SORSA
-        if (apiKey) {
+        if (sorsaKey) {
             const response = await fetch(
                 "https://api.sorsa.io/v3/search-tweets",
                 {
                     method: "POST",
                     headers: {
-                        "ApiKey": apiKey,
+                        "ApiKey": sorsaKey,
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
@@ -33,50 +30,93 @@ export default async function handler(req, res) {
 
             if (response.ok) {
                 const data = await response.json();
+                const tweets = data.tweets || [];
 
-                activeSources.push({
-                    name: "Sorsa",
-                    tweets: data.tweets || []
-                });
+                if (tweets.length > 0) {
+                    return res.status(200).json({
+                        success: true,
+                        activeSources: ["Sorsa"],
+                        backupSources: ["TwitterAPI.io"],
+                        total: tweets.length,
+                        tweets
+                    });
+                }
             }
         }
-
-        // API aktif dan backup lainnya
-        // akan ditambahkan pada tahap berikutnya.
-
-        const allTweets = activeSources.flatMap(
-            source => source.tweets
-        );
-
-        // Hapus tweet duplikat
-        const uniqueTweets = [
-            ...new Map(
-                allTweets.map(tweet => [
-                    tweet.id,
-                    tweet
-                ])
-            ).values()
-        ];
-
-        // Urutkan tweet terbaru
-        uniqueTweets.sort((a, b) =>
-            new Date(b.created_at) -
-            new Date(a.created_at)
-        );
-
-        return res.status(200).json({
-            success: true,
-            activeSources: activeSources.map(s => s.name),
-            backupSources,
-            total: uniqueTweets.length,
-            tweets: uniqueTweets
-        });
-
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            error: "Feed engine error",
-            details: error.message
-        });
+        console.log("Sorsa failed:", error.message);
     }
+
+    // API 2: TWITTERAPI.IO
+    try {
+        if (twitterKey) {
+            const params = new URLSearchParams({
+                query,
+                queryType: "Latest"
+            });
+
+            const response = await fetch(
+                "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+                params.toString(),
+                {
+                    headers: {
+                        "X-API-Key": twitterKey
+                    }
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+
+                const tweets = (data.tweets || []).map(tweet => {
+                    const media = tweet.extendedEntities?.media || [];
+
+                    return {
+                        id: tweet.id,
+                        full_text: tweet.text || "",
+                        created_at: tweet.createdAt,
+                        user: {
+                            name: tweet.author?.name || "X User",
+                            username: tweet.author?.userName || "",
+                            profile_image_url:
+                                tweet.author?.profilePicture || ""
+                        },
+                        entities: media.map(item => ({
+                            type: item.type,
+                            link: item.type === "video"
+                                ? (
+                                    item.video_info?.variants
+                                        ?.filter(v => v.content_type === "video/mp4")
+                                        ?.sort((a, b) =>
+                                            (b.bitrate || 0) -
+                                            (a.bitrate || 0)
+                                        )[0]?.url ||
+                                    item.media_url_https
+                                )
+                                : item.media_url_https,
+                            preview: item.media_url_https
+                        }))
+                    };
+                });
+
+                if (tweets.length > 0) {
+                    return res.status(200).json({
+                        success: true,
+                        activeSources: ["TwitterAPI.io"],
+                        backupSources: [],
+                        total: tweets.length,
+                        tweets
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.log("TwitterAPI.io failed:", error.message);
+    }
+
+    // Semua API gagal
+    return res.status(503).json({
+        success: false,
+        error: "Semua sumber X sedang tidak tersedia"
+    });
 }
