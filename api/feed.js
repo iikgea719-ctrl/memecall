@@ -23,7 +23,7 @@ export default async function handler(req, res) {
             });
 
             const response = await fetch(
-                "https://twtapi.io/api/search?" + params.toString(),
+                "https://api.twtapi.io/search?" + params.toString(),
                 {
                     headers: {
                         "X-API-Key": twtapiKey
@@ -34,18 +34,21 @@ export default async function handler(req, res) {
             if (response.ok) {
                 const data = await response.json();
              
-twtapiTweets = (data.tweets || data.data || []).map(tweet => ({
-    id: tweet.id || tweet.id_str,
-    full_text: tweet.text || tweet.full_text || "",
-    created_at: tweet.created_at || tweet.createdAt,
+
+twtapiTweets = (data.tweets || []).map(tweet => ({
+    id: tweet.tweet_id,
+    full_text: tweet.text || "",
+    created_at: tweet.created_at,
     user: {
-        name: tweet.user?.name || tweet.author?.name || "X User",
-        username: tweet.user?.screen_name || tweet.author?.userName || "",
-        profile_image_url:
-            tweet.user?.profile_image_url ||
-            tweet.author?.profilePicture || ""
+        name: tweet.username || "X User",
+        username: tweet.username || "",
+        profile_image_url: ""
     },
-    entities: []
+    entities: (tweet.media || []).map(item => ({
+        type: item.type || "photo",
+        link: item.url || item.media_url || "",
+        preview: item.url || item.media_url || ""
+    }))
 }));
 
             }
