@@ -10,17 +10,17 @@ export default async function handler(req, res) {
     const sorsaKey = process.env.SORSA_API_KEY;
     const twitterKey = process.env.TWITTERAPI_IO_KEY;
     const twtapiKey = process.env.TWTAPI_KEY;
-    
-    // API TAMBAHAN: TWTAPI
+
+    // TWTAPI
     let twtapiTweets = [];
 
     try {
         if (twtapiKey) {
             const params = new URLSearchParams({
-    q: "memecoin OR pump.fun OR solana meme OR meme coin",
-    product: "Latest",
-    count: "20"
-});
+                q: "memecoin OR pump.fun OR solana meme OR meme coin",
+                product: "Latest",
+                count: "20"
+            });
 
             const response = await fetch(
                 "https://api.twtapi.io/search?" + params.toString(),
@@ -33,73 +33,44 @@ export default async function handler(req, res) {
 
             if (response.ok) {
                 const data = await response.json();
-             
-console.log("TWTAPI RESPONSE:", JSON.stringify(data));
-console.log("TWTAPI TOTAL:", (data.tweets || []).length);
-twtapiTweets = (data.tweets || []).map(tweet => ({
-    id: tweet.tweet_id,
-    full_text: tweet.text || "",
-    created_at: tweet.created_at,
-    user: {
-    name: tweet.user?.name || "X User",
-    username: tweet.user?.screen_name || "",
-    profile_image_url: tweet.user?.avatar_url || ""
-},
-    entities: (tweet.media || []).map(item => ({
-    type: item.type || "photo",
-    link: item.url || item.media_url || "",
-    preview: item.thumb || item.url || item.media_url || ""
-}))
-}));
 
+                twtapiTweets = (data.tweets || []).map(tweet => ({
+                    id: tweet.tweet_id,
+                    full_text: tweet.text || "",
+                    created_at: tweet.created_at,
+                    user: {
+                        name: tweet.user?.name || "X User",
+                        username: tweet.user?.screen_name || "",
+                        profile_image_url: tweet.user?.avatar_url || ""
+                    },
+                    entities: (tweet.media || []).map(item => ({
+                        type: item.type || "photo",
+                        link: item.url || item.media_url || "",
+                        preview: item.thumb || item.url || item.media_url || ""
+                    }))
+                }));
             }
         }
     } catch (error) {
         console.log("TwtAPI failed:", error.message);
     }
 
-    // API 1: TWITTERAPI.IO (UTAMA)
+    // TWITTERAPI.IO
     try {
         if (twitterKey) {
             const params = new URLSearchParams({
-    query: "(memecoin OR pump.fun OR solana meme OR meme coin)",
-    queryType: "Latest"
-});
+                query: "(memecoin OR pump.fun OR solana meme OR meme coin)",
+                queryType: "Latest"
+            });
 
             const extraParams = new URLSearchParams({
-    query: "(new solana token OR solana memecoin OR meme coin launch)",
-    queryType: "Latest"
-});
+                query: "(new solana token OR solana memecoin OR meme coin launch)",
+                queryType: "Latest"
+            });
+
             const response = await fetch(
-    "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
-    params.toString(),
-    {
-        headers: {
-            "X-API-Key": twitterKey
-        }
-    }
-);
-
-let extraTweets = [];
-
-try {
-    const extraResponse = await fetch(
-        "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
-        extraParams.toString(),
-        {
-            headers: {
-                "X-API-Key": twitterKey
-            }
-        }
-    );
-
-    if (extraResponse.ok) {
-        const extraData = await extraResponse.json();
-        extraTweets = extraData.tweets || [];
-    }
-} catch (error) {
-    console.log("Extra search failed:", error.message);
-}
+                "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+                params.toString(),
                 {
                     headers: {
                         "X-API-Key": twitterKey
@@ -107,11 +78,34 @@ try {
                 }
             );
 
+            let extraTweets = [];
+
+            try {
+                const extraResponse = await fetch(
+                    "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+                    extraParams.toString(),
+                    {
+                        headers: {
+                            "X-API-Key": twitterKey
+                        }
+                    }
+                );
+
+                if (extraResponse.ok) {
+                    const extraData = await extraResponse.json();
+                    extraTweets = extraData.tweets || [];
+                }
+            } catch (error) {
+                console.log("Extra search failed:", error.message);
+            }
+
             if (response.ok) {
                 const data = await response.json();
-                console.log("TWITTERAPI TOTAL:", (data.tweets || []).length);
 
-                const tweets = [...(data.tweets || []), ...extraTweets].map(tweet => {
+                const tweets = [
+                    ...(data.tweets || []),
+                    ...extraTweets
+                ].map(tweet => {
                     const media = tweet.extendedEntities?.media || [];
 
                     return {
@@ -142,61 +136,63 @@ try {
                     };
                 });
 
-                
-const combinedTweets = [...twtapiTweets, ...tweets];
-const relevantTweets = combinedTweets.filter(tweet => {
-    const text = (tweet.full_text || "").toLowerCase();
+                const combinedTweets = [
+                    ...twtapiTweets,
+                    ...tweets
+                ];
 
-    return [
-        "memecoin",
-        "meme coin",
-        "meme",
-        "pump.fun",
-        "pumpfun",
-        "solana",
-        "token",
-        "coin",
-        "crypto",
-        "dex",
-        "bonding curve",
-        "market cap",
-        "pump",
-        "degen",
-        "launch",
-        "ca:",
-        "rug",
-        "liquidity",
-        "holder"
-    ].some(keyword => text.includes(keyword));
-});
+                const relevantTweets = combinedTweets.filter(tweet => {
+                    const text = (tweet.full_text || "").toLowerCase();
 
-const uniqueTweets = Array.from(
-    new Map(
-        relevantTweets.map(tweet => [tweet.id, tweet])
-    ).values()
-);
+                    return [
+                        "memecoin",
+                        "meme coin",
+                        "meme",
+                        "pump.fun",
+                        "pumpfun",
+                        "solana",
+                        "token",
+                        "coin",
+                        "crypto",
+                        "dex",
+                        "bonding curve",
+                        "market cap",
+                        "pump",
+                        "degen",
+                        "launch",
+                        "ca:",
+                        "rug",
+                        "liquidity",
+                        "holder"
+                    ].some(keyword => text.includes(keyword));
+                });
 
-uniqueTweets.sort((a, b) =>
-    new Date(b.created_at) - new Date(a.created_at)
-);
+                const uniqueTweets = Array.from(
+                    new Map(
+                        relevantTweets.map(tweet => [tweet.id, tweet])
+                    ).values()
+                );
 
-if (uniqueTweets.length > 0) {
-    return res.status(200).json({
-        success: true,
-        activeSources: ["TwtAPI", "TwitterAPI.io"],
-        backupSources: ["Sorsa"],
-        total: uniqueTweets.length,
-        tweets: uniqueTweets
-    });
-}
+                uniqueTweets.sort((a, b) =>
+                    new Date(b.created_at) - new Date(a.created_at)
+                );
 
+                if (uniqueTweets.length > 0) {
+                    return res.status(200).json({
+                        success: true,
+                        activeSources: ["TwtAPI", "TwitterAPI.io"],
+                        backupSources: ["Sorsa"],
+                        total: uniqueTweets.length,
+                        tweets: uniqueTweets
+                    });
+                }
             }
         }
     } catch (error) {
         console.log("TwitterAPI.io failed:", error.message);
     }
 
-    // API 2: SORSA (CADANGAN)
+    // SORSA BACKUP
     try {
         if (sorsaKey) {
             const response = await fetch(
@@ -233,7 +229,6 @@ if (uniqueTweets.length > 0) {
         console.log("Sorsa failed:", error.message);
     }
 
-    // Semua API gagal
     return res.status(503).json({
         success: false,
         error: "Semua sumber X sedang tidak tersedia"
