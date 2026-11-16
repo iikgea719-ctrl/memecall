@@ -9,6 +9,7 @@ export default async function handler(req, res) {
     const query = req.query.q || "memecoin";
     const sorsaKey = process.env.SORSA_API_KEY;
     const twitterKey = process.env.TWITTERAPI_IO_KEY;
+    const twtapiKey = process.env.TWTAPI_KEY;
 
     // API 1: TWITTERAPI.IO (UTAMA)
     try {
