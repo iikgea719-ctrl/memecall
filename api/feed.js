@@ -67,6 +67,10 @@ export default async function handler(req, res) {
                 query: "(new solana token OR solana memecoin OR meme coin launch)",
                 queryType: "Latest"
             });
+            const communityParams = new URLSearchParams({
+    query: "solana memecoin",
+    queryType: "Latest"
+});
 
             const response = await fetch(
                 "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
@@ -79,6 +83,7 @@ export default async function handler(req, res) {
             );
 
             let extraTweets = [];
+let communityTweets = [];
 
             try {
                 const extraResponse = await fetch(
@@ -98,15 +103,38 @@ export default async function handler(req, res) {
             } catch (error) {
                 console.log("Extra search failed:", error.message);
             }
+            
+try {
+    const communityResponse = await fetch(
+        "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+        communityParams.toString(),
+        {
+            headers: {
+                "X-API-Key": twitterKey
+            }
+        }
+    );
+
+    if (communityResponse.ok) {
+        const communityData = await communityResponse.json();
+        communityTweets = communityData.tweets || [];
+    }
+} catch (error) {
+    console.log("Community search failed:", error.message);
+}
+
 
             if (response.ok) {
                 const data = await response.json();
 
-                const tweets = [
-                    ...(data.tweets || []),
-                    ...extraTweets
-                ].map(tweet => {
-                    const media = tweet.extendedEntities?.media || [];
+                
+const tweets = [
+    ...(data.tweets || []),
+    ...extraTweets,
+    ...communityTweets
+].map(tweet => {
+    const media = tweet.extendedEntities?.media || [];
+
 
                     return {
                         id: tweet.id,
