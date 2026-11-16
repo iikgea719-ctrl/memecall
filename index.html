@@ -314,7 +314,7 @@ grid-template-columns:1fr 65px 65px
 
 <div class="columns">
 
-<section>
+<section id="trendingSection">
 
 <div class="section-header">
 <div class="section-title">Trending Coins</div>
@@ -386,7 +386,7 @@ style="width:100%;background:#000;border:1px solid #202020;color:#fff;padding:11
 
 </section>
 
-<section>
+<section id="latestSection">
 
 <div class="section-header">
 <div class="section-title">Latest X Discussions</div>
@@ -478,8 +478,11 @@ tokenSearch.addEventListener("input", function() {
 });
 </script>
   
+
 <script>
 const navItems = document.querySelectorAll(".nav-item");
+const trendingSection = document.getElementById("trendingSection");
+const latestSection = document.getElementById("latestSection");
 
 navItems.forEach(item => {
     item.addEventListener("click", function() {
@@ -487,6 +490,21 @@ navItems.forEach(item => {
         this.classList.add("active");
 
         const filter = this.dataset.filter;
+
+        trendingSection.style.display = "block";
+        latestSection.style.display = "block";
+
+        if (filter === "latest") {
+            trendingSection.style.display = "none";
+        }
+
+        if (filter === "trending") {
+            latestSection.style.display = "none";
+        }
+
+        if (filter === "influencers") {
+            trendingSection.style.display = "none";
+        }
 
         document.querySelectorAll(".coin-row").forEach(row => {
             const network = row.querySelector(".network").textContent.toLowerCase();
@@ -500,7 +518,6 @@ navItems.forEach(item => {
     });
 });
 </script>
-
 
 </body>
 </html>
