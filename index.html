@@ -606,7 +606,7 @@ async function discoverCoins() {
 
         await refreshCoinData();
         renderCoins();
-
+      
     } catch (error) {
         console.error("Discovery error:", error);
     }
@@ -629,25 +629,20 @@ async function refreshCoinData() {
 
             const pairs = await response.json();
 
-            pairs.forEach(pair => {
-                const address = pair.baseToken?.address;
+            
+pairs.forEach(pair => {
+    const address = pair.baseToken?.address;
 
-                if (!address) return;
+    if (!address) return;
 
-                const key = address.toLowerCase();
+    const key = address.toLowerCase();
 
-                if (
-                    !coinPairs[key] ||
-                    (pair.liquidity?.usd || 0) >
-                    (coinPairs[key].liquidity?.usd || 0)
-                ) {
-                    coinPairs[key] = pair;
-                  const updated = new Date();
-document.getElementById("lastUpdated").textContent =
-    "Updated " + updated.toLocaleTimeString("id-ID");
-                }
-            });
+    coinPairs[key] = pair;
+});
+
         }
+      document.getElementById("lastUpdated").textContent =
+    "Updated " + new Date().toLocaleTimeString("id-ID");
 
     } catch (error) {
         console.error("Price refresh error:", error);
@@ -718,13 +713,13 @@ function formatMcap(value) {
 async function startMemeCall() {
     await discoverCoins();
 
-    setInterval(async () => {
-        await refreshCoinData();
-    }, 5000);
+    
+setInterval(async () => {
+    await refreshCoinData();
+    renderCoins();
+}, 5000);
 
-    setInterval(async () => {
-        renderCoins();
-    }, 30000);
+    
 
     setInterval(async () => {
         await discoverCoins();
