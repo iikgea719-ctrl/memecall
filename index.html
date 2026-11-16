@@ -264,6 +264,16 @@ h1{font-size:19px}
 grid-template-columns:1fr 65px 65px
 }
 }
+  #liveStatus {
+    color: #00ff88;
+    font-size: 11px;
+    margin-left: 6px;
+}
+
+#lastUpdated {
+    color: #777;
+    font-size: 11px;
+}
 </style>
 </head>
 
@@ -317,8 +327,10 @@ grid-template-columns:1fr 65px 65px
 <section id="trendingSection">
 
 <div class="section-header">
-<div class="section-title">Trending Coins</div>
-<small>24H</small>
+<div class="section-title">
+Trending Coins <span id="liveStatus">● LIVE</span>
+</div>
+<small id="lastUpdated">Updating...</small>
 </div>
 
 <div style="margin-bottom:14px;">
@@ -630,6 +642,9 @@ async function refreshCoinData() {
                     (coinPairs[key].liquidity?.usd || 0)
                 ) {
                     coinPairs[key] = pair;
+                  const updated = new Date();
+document.getElementById("lastUpdated").textContent =
+    "Updated " + updated.toLocaleTimeString("id-ID");
                 }
             });
         }
