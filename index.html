@@ -411,7 +411,7 @@ Discussions about meme coins will automatically appear here after X API integrat
 </div>
 </div>
 
-<div class="feed-item">
+<div class="feed-item" id="influencerPost">
 <div class="feed-top">
 <div>
 <span class="author">Crypto Influencer</span>
@@ -490,6 +490,11 @@ navItems.forEach(item => {
         this.classList.add("active");
 
         const filter = this.dataset.filter;
+      
+document.querySelectorAll(".feed-item").forEach(post => {
+    post.style.display = "block";
+});
+
 
         if (filter === "latest") {
     trendingSection.style.display = "none";
@@ -504,6 +509,12 @@ navItems.forEach(item => {
         if (filter === "influencers") {
     trendingSection.style.display = "none";
     latestSection.style.display = "block";
+
+    document.querySelectorAll(".feed-item").forEach(post => {
+        post.style.display = "none";
+    });
+
+    document.getElementById("influencerPost").style.display = "block";
 }
 
         document.querySelectorAll(".coin-row").forEach(row => {
