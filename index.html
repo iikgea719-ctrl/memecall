@@ -457,5 +457,26 @@ Discover new meme coin conversations and social activity.
 </footer>
 
 </div>
+  
+<script>
+const tokenSearch = document.getElementById("tokenSearch");
+const coinRows = document.querySelectorAll(".coin-row");
+
+tokenSearch.addEventListener("input", function() {
+    const keyword = this.value.toLowerCase();
+
+    coinRows.forEach(row => {
+        const ticker = row.querySelector(".ticker").textContent.toLowerCase();
+        const network = row.querySelector(".network").textContent.toLowerCase();
+
+        if (ticker.includes(keyword) || network.includes(keyword)) {
+            row.style.display = "grid";
+        } else {
+            row.style.display = "none";
+        }
+    });
+});
+</script>
+
 </body>
 </html>
