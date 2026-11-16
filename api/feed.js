@@ -68,11 +68,11 @@ export default async function handler(req, res) {
                 queryType: "Latest"
             });
             const communityParams = new URLSearchParams({
-    query: "solana memecoin",
+    query: "(solana OR pumpfun OR pump.fun) (coin OR token OR meme)",
     queryType: "Latest"
 });
             const tradingParams = new URLSearchParams({
-    query: "memecoin trading",
+    query: "(memecoin OR meme coin) (trading OR buy OR sell OR entry OR launch)",
     queryType: "Latest"
 });
 
