@@ -45,10 +45,10 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
     profile_image_url: tweet.user?.avatar_url || ""
 },
     entities: (tweet.media || []).map(item => ({
-        type: item.type || "photo",
-        link: item.url || item.media_url || "",
-        preview: item.url || item.media_url || ""
-    }))
+    type: item.type || "photo",
+    link: item.url || item.media_url || "",
+    preview: item.thumb || item.url || item.media_url || ""
+}))
 }));
 
             }
