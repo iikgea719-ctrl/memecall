@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
     // API 1: SORSA
     try {
-        if (sorsaKey) {
+        if (sorsaKey && req.query.source !== "twitter") {
             const response = await fetch(
                 "https://api.sorsa.io/v3/search-tweets",
                 {
