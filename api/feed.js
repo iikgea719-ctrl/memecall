@@ -71,6 +71,10 @@ export default async function handler(req, res) {
     query: "solana memecoin",
     queryType: "Latest"
 });
+            const tradingParams = new URLSearchParams({
+    query: "memecoin trading",
+    queryType: "Latest"
+});
 
             const response = await fetch(
                 "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
@@ -84,6 +88,7 @@ export default async function handler(req, res) {
 
             let extraTweets = [];
 let communityTweets = [];
+let tradingTweets = [];
 
             try {
                 const extraResponse = await fetch(
@@ -122,6 +127,26 @@ try {
 } catch (error) {
     console.log("Community search failed:", error.message);
 }
+            
+try {
+    const tradingResponse = await fetch(
+        "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+        tradingParams.toString(),
+        {
+            headers: {
+                "X-API-Key": twitterKey
+            }
+        }
+    );
+
+    if (tradingResponse.ok) {
+        const tradingData = await tradingResponse.json();
+        tradingTweets = tradingData.tweets || [];
+    }
+} catch (error) {
+    console.log("Trading search failed:", error.message);
+}
+
 
 
             if (response.ok) {
@@ -131,7 +156,8 @@ try {
 const tweets = [
     ...(data.tweets || []),
     ...extraTweets,
-    ...communityTweets
+    ...communityTweets,
+    ...tradingTweets
 ].map(tweet => {
     const media = tweet.extendedEntities?.media || [];
 
