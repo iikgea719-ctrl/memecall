@@ -393,7 +393,7 @@ style="width:100%;background:#000;border:1px solid #202020;color:#fff;padding:11
 <small>ALL POSTS</small>
 </div>
 
-<div class="feed-item">
+<div class="feed-item" data-chain="base">
 <div class="feed-top">
 <div>
 <span class="author">Crypto Community</span>
@@ -411,7 +411,7 @@ Discussions about meme coins will automatically appear here after X API integrat
 </div>
 </div>
 
-<div class="feed-item" id="influencerPost">
+<div class="feed-item" id="influencerPost" data-chain="ethereum">
 <div class="feed-top">
 <div>
 <span class="author">Crypto Influencer</span>
@@ -429,7 +429,7 @@ Influencer posts will be collected and displayed automatically.
 </div>
 </div>
 
-<div class="feed-item">
+<div class="feed-item" data-chain="solana">
 <div class="feed-top">
 <div>
 <span class="author">Meme Coin Watch</span>
@@ -516,6 +516,15 @@ document.querySelectorAll(".feed-item").forEach(post => {
 
     document.getElementById("influencerPost").style.display = "block";
 }
+      
+
+document.querySelectorAll(".feed-item").forEach(post => {
+    const chain = post.dataset.chain;
+
+    if (filter === "solana" || filter === "base" || filter === "ethereum") {
+        post.style.display = chain === filter ? "block" : "none";
+    }
+});
 
         document.querySelectorAll(".coin-row").forEach(row => {
             const network = row.querySelector(".network").textContent.toLowerCase();
