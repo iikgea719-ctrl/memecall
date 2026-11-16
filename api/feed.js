@@ -40,10 +40,10 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
     full_text: tweet.text || "",
     created_at: tweet.created_at,
     user: {
-        name: tweet.username || "X User",
-        username: tweet.username || "",
-        profile_image_url: ""
-    },
+    name: tweet.user?.name || "X User",
+    username: tweet.user?.screen_name || "",
+    profile_image_url: tweet.user?.avatar_url || ""
+},
     entities: (tweet.media || []).map(item => ({
         type: item.type || "photo",
         link: item.url || item.media_url || "",
