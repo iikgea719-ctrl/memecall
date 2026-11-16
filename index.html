@@ -298,6 +298,22 @@ grid-template-columns:1fr 65px 65px
     border-radius: 8px;
     margin-top: 12px;
 }
+  
+.translate-btn {
+    background: transparent;
+    border: 1px solid #333;
+    color: #aaa;
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin-top: 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.translate-btn:hover {
+    color: white;
+    border-color: #777;
+}
 
 </style>
 </head>
@@ -786,9 +802,16 @@ post.innerHTML = `
         <span class="source">X</span>
     </div>
 
-    <div class="feed-text">${tweet.full_text || ""}</div>
+    <div class="feed-text" id="tweet-${tweet.id}">
+    ${tweet.full_text || ""}
+</div>
 
-    ${mediaHTML}
+<button class="translate-btn"
+    onclick="translateTweet('${tweet.id}')">
+    Translate 🇮🇩
+</button>
+
+${mediaHTML}
 
     <div class="feed-bottom">
         <span>${tweet.created_at || ""}</span>
@@ -809,6 +832,41 @@ post.innerHTML = `
 
 loadXPosts();
 setInterval(loadXPosts, 60000);
+  
+async function translateTweet(id) {
+    const element = document.getElementById("tweet-" + id);
+    const button = element.nextElementSibling;
+
+    const originalText = element.dataset.original || element.innerText;
+
+    if (element.dataset.translated === "true") {
+        element.innerText = originalText;
+        element.dataset.translated = "false";
+        button.innerText = "Translate 🇮🇩";
+        return;
+    }
+
+    button.innerText = "Menerjemahkan...";
+
+    try {
+        const response = await fetch(
+            "https://api.mymemory.translated.net/get?q=" +
+            encodeURIComponent(originalText) +
+            "&langpair=en|id"
+        );
+
+        const data = await response.json();
+
+        element.dataset.original = originalText;
+        element.innerText = data.responseData.translatedText;
+        element.dataset.translated = "true";
+
+        button.innerText = "Show Original";
+    } catch (error) {
+        button.innerText = "Gagal menerjemahkan";
+    }
+}
+
 </script>
 
 </body>
