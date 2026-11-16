@@ -491,20 +491,20 @@ navItems.forEach(item => {
 
         const filter = this.dataset.filter;
 
-        trendingSection.style.display = "block";
-        latestSection.style.display = "block";
-
         if (filter === "latest") {
-            trendingSection.style.display = "none";
-        }
+    trendingSection.style.display = "none";
+    latestSection.style.display = "block";
+}
 
         if (filter === "trending") {
-            latestSection.style.display = "none";
-        }
+    trendingSection.style.display = "block";
+    latestSection.style.display = "none";
+}
 
         if (filter === "influencers") {
-            trendingSection.style.display = "none";
-        }
+    trendingSection.style.display = "none";
+    latestSection.style.display = "block";
+}
 
         document.querySelectorAll(".coin-row").forEach(row => {
             const network = row.querySelector(".network").textContent.toLowerCase();
@@ -517,6 +517,7 @@ navItems.forEach(item => {
         });
     });
 });
+  document.querySelector('[data-filter="latest"]').click();
 </script>
 
 </body>
