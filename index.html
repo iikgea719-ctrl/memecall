@@ -566,6 +566,7 @@ function openChart(url) {
 </script>
 
 <script>
+
 async function loadCoins() {
     const coinList = document.getElementById("coinList");
 
@@ -578,9 +579,9 @@ async function loadCoins() {
 
         const coins = data.filter(coin =>
             ["solana", "base", "ethereum"].includes(coin.chainId)
-        ).slice(0, 30);
+        );
 
-        coinList.innerHTML = "";
+        const results = [];
 
         for (const coin of coins) {
             const pairResponse = await fetch(
@@ -595,7 +596,18 @@ async function loadCoins() {
                 (a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
             )[0];
 
-            const name = pair.baseToken?.name || "Token";
+            results.push({
+                coin,
+                pair,
+                volume: pair.volume?.h24 || 0
+            });
+        }
+
+        results.sort((a, b) => b.volume - a.volume);
+
+        coinList.innerHTML = "";
+
+        results.forEach(({ coin, pair }) => {
             const symbol = pair.baseToken?.symbol || "COIN";
             const mcap = pair.marketCap || pair.fdv || 0;
             const change = pair.priceChange?.h24 || 0;
@@ -618,12 +630,12 @@ async function loadCoins() {
                 </div>
 
                 <div class="coin-links">
-<button onclick="copyCA('${coin.tokenAddress}')">CA</button>
-<button onclick="openChart('${pair.url}')">Chart</button>
-</div>
+                    <button onclick="copyCA('${coin.tokenAddress}')">CA</button>
+                    <button onclick="openChart('${pair.url}')">Chart</button>
+                </div>
             </div>
             `;
-        }
+        });
 
     } catch (error) {
         coinList.innerHTML = "Failed to load token data.";
