@@ -428,6 +428,25 @@ Influencer posts will be collected and displayed automatically.
 <span>Source: X</span>
 </div>
 </div>
+  
+<div class="feed-item" id="influencerSolana" data-chain="solana">
+<div class="feed-top">
+<div>
+<span class="author">Solana Alpha</span>
+<span class="handle">@solanaalpha</span>
+</div>
+<span class="source">INFLUENCER</span>
+</div>
+<div class="feed-text">
+Solana meme coin insights and market updates.
+</div>
+<div class="tags">SOLANA · INFLUENCER</div>
+<div class="feed-bottom">
+<span>Waiting for X connection</span>
+<span>Source: X</span>
+</div>
+</div>
+
   <div class="feed-item" id="ethereumPost" data-chain="ethereum">
 <div class="feed-top">
 <div>
@@ -531,7 +550,11 @@ document.querySelectorAll(".feed-item").forEach(post => {
         post.style.display = "none";
     });
 
-    document.getElementById("influencerPost").style.display = "block";
+    document.querySelectorAll(".feed-item").forEach(post => {
+    if (post.querySelector(".source").textContent === "INFLUENCER") {
+        post.style.display = "block";
+    }
+});
 }
       
 
