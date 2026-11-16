@@ -128,10 +128,33 @@ const relevantTweets = combinedTweets.filter(tweet => {
         "crypto"
     ].some(keyword => text.includes(keyword));
 });
+const promoTweets = relevantTweets.filter(tweet => {
+    const text = (tweet.full_text || "").toLowerCase();
 
+    const promoPatterns = [
+        "dm for entry",
+        "dm me",
+        "tg eating massively",
+        "vip group",
+        "vip tg",
+        "join my tg",
+        "join our tg",
+        "link in bio",
+        "more calls",
+        "early calls",
+        "signals on telegram",
+        "free memecoin alerts"
+    ];
+
+    const promoCount = promoPatterns.filter(
+        phrase => text.includes(phrase)
+    ).length;
+
+    return promoCount < 2;
+});
 const uniqueTweets = Array.from(
     new Map(
-        relevantTweets.map(tweet => [tweet.id, tweet])
+        promoTweets.map(tweet => [tweet.id, tweet])
     ).values()
 );
 
