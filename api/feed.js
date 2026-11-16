@@ -66,9 +66,40 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
     queryType: "Latest"
 });
 
+            const extraParams = new URLSearchParams({
+    query: "pump.fun",
+    queryType: "Latest"
+});
             const response = await fetch(
-                "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
-                params.toString(),
+    "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+    params.toString(),
+    {
+        headers: {
+            "X-API-Key": twitterKey
+        }
+    }
+);
+
+let extraTweets = [];
+
+try {
+    const extraResponse = await fetch(
+        "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
+        extraParams.toString(),
+        {
+            headers: {
+                "X-API-Key": twitterKey
+            }
+        }
+    );
+
+    if (extraResponse.ok) {
+        const extraData = await extraResponse.json();
+        extraTweets = extraData.tweets || [];
+    }
+} catch (error) {
+    console.log("Extra search failed:", error.message);
+}
                 {
                     headers: {
                         "X-API-Key": twitterKey
@@ -80,7 +111,7 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
                 const data = await response.json();
                 console.log("TWITTERAPI TOTAL:", (data.tweets || []).length);
 
-                const tweets = (data.tweets || []).map(tweet => {
+                const tweets = [...(data.tweets || []), ...extraTweets].map(tweet => {
                     const media = tweet.extendedEntities?.media || [];
 
                     return {
