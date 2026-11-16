@@ -10,6 +10,49 @@ export default async function handler(req, res) {
     const sorsaKey = process.env.SORSA_API_KEY;
     const twitterKey = process.env.TWITTERAPI_IO_KEY;
     const twtapiKey = process.env.TWTAPI_KEY;
+    
+    // API TAMBAHAN: TWTAPI
+    let twtapiTweets = [];
+
+    try {
+        if (twtapiKey) {
+            const params = new URLSearchParams({
+                q: query,
+                product: "Latest",
+                count: "200"
+            });
+
+            const response = await fetch(
+                "https://twtapi.io/api/search?" + params.toString(),
+                {
+                    headers: {
+                        "X-API-Key": twtapiKey
+                    }
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+             
+twtapiTweets = (data.tweets || data.data || []).map(tweet => ({
+    id: tweet.id || tweet.id_str,
+    full_text: tweet.text || tweet.full_text || "",
+    created_at: tweet.created_at || tweet.createdAt,
+    user: {
+        name: tweet.user?.name || tweet.author?.name || "X User",
+        username: tweet.user?.screen_name || tweet.author?.userName || "",
+        profile_image_url:
+            tweet.user?.profile_image_url ||
+            tweet.author?.profilePicture || ""
+    },
+    entities: []
+}));
+
+            }
+        }
+    } catch (error) {
+        console.log("TwtAPI failed:", error.message);
+    }
 
     // API 1: TWITTERAPI.IO (UTAMA)
     try {
@@ -63,15 +106,29 @@ export default async function handler(req, res) {
                     };
                 });
 
-                if (tweets.length > 0) {
-                    return res.status(200).json({
-                        success: true,
-                        activeSources: ["TwitterAPI.io"],
-                        backupSources: ["Sorsa"],
-                        total: tweets.length,
-                        tweets
-                    });
-                }
+                
+const combinedTweets = [...twtapiTweets, ...tweets];
+
+const uniqueTweets = Array.from(
+    new Map(
+        combinedTweets.map(tweet => [tweet.id, tweet])
+    ).values()
+);
+
+uniqueTweets.sort((a, b) =>
+    new Date(b.created_at) - new Date(a.created_at)
+);
+
+if (uniqueTweets.length > 0) {
+    return res.status(200).json({
+        success: true,
+        activeSources: ["TwtAPI", "TwitterAPI.io"],
+        backupSources: ["Sorsa"],
+        total: uniqueTweets.length,
+        tweets: uniqueTweets
+    });
+}
+
             }
         }
     } catch (error) {
