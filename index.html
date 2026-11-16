@@ -340,8 +340,12 @@ style="width:100%;background:#000;border:1px solid #202020;color:#fff;padding:11
 <div class="token">
 <div class="avatar">B</div>
 <div>
-<div class="ticker">$BONK</div>
+<a class="ticker" href="https://dexscreener.com/solana/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263" target="_blank">$BONK</a>
 <div class="network">Solana</div>
+<div class="coin-links">
+<button onclick="copyCA('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263')">CA</button>
+<button onclick="openChart('https://dexscreener.com/solana/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263')">Chart</button>
+</div>
 </div>
 </div>
 <div class="number">$42M</div>
@@ -597,6 +601,18 @@ document.querySelectorAll(".feed-item").forEach(post => {
     });
 });
   document.querySelector('[data-filter="latest"]').click();
+</script>
+
+<script>
+function copyCA(address) {
+    navigator.clipboard.writeText(address).then(() => {
+        alert("Contract Address berhasil disalin!");
+    });
+}
+
+function openChart(url) {
+    window.open(url, "_blank");
+}
 </script>
 
 </body>
