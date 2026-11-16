@@ -17,10 +17,10 @@ export default async function handler(req, res) {
     try {
         if (twtapiKey) {
             const params = new URLSearchParams({
-                q: query,
-                product: "Latest",
-                count: "20"
-            });
+    q: "memecoin OR pump.fun OR solana meme OR meme coin",
+    product: "Latest",
+    count: "20"
+});
 
             const response = await fetch(
                 "https://api.twtapi.io/search?" + params.toString(),
@@ -61,9 +61,9 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
     try {
         if (twitterKey) {
             const params = new URLSearchParams({
-                query,
-                queryType: "Latest"
-            });
+    query: "(memecoin OR pump.fun OR solana meme OR meme coin)",
+    queryType: "Latest"
+});
 
             const response = await fetch(
                 "https://api.twitterapi.io/twitter/tweet/advanced_search?" +
