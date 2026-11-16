@@ -112,9 +112,26 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
                 
 const combinedTweets = [...twtapiTweets, ...tweets];
 
+const relevantTweets = combinedTweets.filter(tweet => {
+    const text = (tweet.full_text || "").toLowerCase();
+
+    return [
+        "memecoin",
+        "meme coin",
+        "meme",
+        "pump.fun",
+        "pumpfun",
+        "solana",
+        "$",
+        "token",
+        "coin",
+        "crypto"
+    ].some(keyword => text.includes(keyword));
+});
+
 const uniqueTweets = Array.from(
     new Map(
-        combinedTweets.map(tweet => [tweet.id, tweet])
+        relevantTweets.map(tweet => [tweet.id, tweet])
     ).values()
 );
 
