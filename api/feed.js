@@ -34,7 +34,7 @@ export default async function handler(req, res) {
             if (response.ok) {
                 const data = await response.json();
              
-
+console.log("TWTAPI RESPONSE:", JSON.stringify(data));
 twtapiTweets = (data.tweets || []).map(tweet => ({
     id: tweet.tweet_id,
     full_text: tweet.text || "",
