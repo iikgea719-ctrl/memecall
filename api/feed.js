@@ -67,7 +67,7 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
 });
 
             const extraParams = new URLSearchParams({
-    query: "pump.fun",
+    query: "(new solana token OR solana memecoin OR meme coin launch)",
     queryType: "Latest"
 });
             const response = await fetch(
