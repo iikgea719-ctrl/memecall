@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     queryType: "Latest"
 });
             const tradingParams = new URLSearchParams({
-    query: "(memecoin OR meme coin) (trading OR buy OR sell OR entry OR launch)",
+    query: "(solana OR crypto OR memecoin) (pump OR token OR trading OR launch OR alpha)",
     queryType: "Latest"
 });
 
