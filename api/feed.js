@@ -113,7 +113,6 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
 
                 
 const combinedTweets = [...twtapiTweets, ...tweets];
-
 const relevantTweets = combinedTweets.filter(tweet => {
     const text = (tweet.full_text || "").toLowerCase();
 
@@ -124,39 +123,25 @@ const relevantTweets = combinedTweets.filter(tweet => {
         "pump.fun",
         "pumpfun",
         "solana",
-        "$",
         "token",
         "coin",
-        "crypto"
+        "crypto",
+        "dex",
+        "bonding curve",
+        "market cap",
+        "pump",
+        "degen",
+        "launch",
+        "ca:",
+        "rug",
+        "liquidity",
+        "holder"
     ].some(keyword => text.includes(keyword));
 });
-const promoTweets = relevantTweets.filter(tweet => {
-    const text = (tweet.full_text || "").toLowerCase();
 
-    const promoPatterns = [
-        "dm for entry",
-        "dm me",
-        "tg eating massively",
-        "vip group",
-        "vip tg",
-        "join my tg",
-        "join our tg",
-        "link in bio",
-        "more calls",
-        "early calls",
-        "signals on telegram",
-        "free memecoin alerts"
-    ];
-
-    const promoCount = promoPatterns.filter(
-        phrase => text.includes(phrase)
-    ).length;
-
-    return promoCount < 2;
-});
 const uniqueTweets = Array.from(
     new Map(
-        promoTweets.map(tweet => [tweet.id, tweet])
+        relevantTweets.map(tweet => [tweet.id, tweet])
     ).values()
 );
 
