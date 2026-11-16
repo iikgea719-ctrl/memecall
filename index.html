@@ -539,7 +539,7 @@ document.querySelectorAll(".feed-item").forEach(post => {
     const chain = post.dataset.chain;
 
     if (filter === "solana" || filter === "base" || filter === "ethereum") {
-        post.style.display = chain === filter ? "block" : "none";
+        post.style.display = chain === filter && post.id !== "influencerPost" ? "block" : "none";
     }
 });
 
