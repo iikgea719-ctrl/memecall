@@ -19,7 +19,7 @@ export default async function handler(req, res) {
             const params = new URLSearchParams({
                 q: query,
                 product: "Latest",
-                count: "200"
+                count: "20"
             });
 
             const response = await fetch(
