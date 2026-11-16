@@ -10,44 +10,7 @@ export default async function handler(req, res) {
     const sorsaKey = process.env.SORSA_API_KEY;
     const twitterKey = process.env.TWITTERAPI_IO_KEY;
 
-    // API 1: SORSA
-    try {
-        if (sorsaKey) {
-            const response = await fetch(
-                "https://api.sorsa.io/v3/search-tweets",
-                {
-                    method: "POST",
-                    headers: {
-                        "ApiKey": sorsaKey,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        query,
-                        order: "latest"
-                    })
-                }
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                const tweets = data.tweets || [];
-
-                if (tweets.length > 0) {
-                    return res.status(200).json({
-                        success: true,
-                        activeSources: ["Sorsa"],
-                        backupSources: ["TwitterAPI.io"],
-                        total: tweets.length,
-                        tweets
-                    });
-                }
-            }
-        }
-    } catch (error) {
-        console.log("Sorsa failed:", error.message);
-    }
-
-    // API 2: TWITTERAPI.IO
+    // API 1: TWITTERAPI.IO (UTAMA)
     try {
         if (twitterKey) {
             const params = new URLSearchParams({
@@ -103,7 +66,7 @@ export default async function handler(req, res) {
                     return res.status(200).json({
                         success: true,
                         activeSources: ["TwitterAPI.io"],
-                        backupSources: [],
+                        backupSources: ["Sorsa"],
                         total: tweets.length,
                         tweets
                     });
@@ -112,6 +75,43 @@ export default async function handler(req, res) {
         }
     } catch (error) {
         console.log("TwitterAPI.io failed:", error.message);
+    }
+
+    // API 2: SORSA (CADANGAN)
+    try {
+        if (sorsaKey) {
+            const response = await fetch(
+                "https://api.sorsa.io/v3/search-tweets",
+                {
+                    method: "POST",
+                    headers: {
+                        "ApiKey": sorsaKey,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        query,
+                        order: "latest"
+                    })
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                const tweets = data.tweets || [];
+
+                if (tweets.length > 0) {
+                    return res.status(200).json({
+                        success: true,
+                        activeSources: ["Sorsa"],
+                        backupSources: [],
+                        total: tweets.length,
+                        tweets
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.log("Sorsa failed:", error.message);
     }
 
     // Semua API gagal
