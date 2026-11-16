@@ -35,6 +35,7 @@ export default async function handler(req, res) {
                 const data = await response.json();
              
 console.log("TWTAPI RESPONSE:", JSON.stringify(data));
+console.log("TWTAPI TOTAL:", (data.tweets || []).length);
 twtapiTweets = (data.tweets || []).map(tweet => ({
     id: tweet.tweet_id,
     full_text: tweet.text || "",
@@ -77,6 +78,7 @@ twtapiTweets = (data.tweets || []).map(tweet => ({
 
             if (response.ok) {
                 const data = await response.json();
+                console.log("TWITTERAPI TOTAL:", (data.tweets || []).length);
 
                 const tweets = (data.tweets || []).map(tweet => {
                     const media = tweet.extendedEntities?.media || [];
