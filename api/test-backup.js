@@ -11,10 +11,11 @@ export default async function handler(req, res) {
 
     try {
         const params = new URLSearchParams({
-            query: 'memecoin OR "meme coin" OR pump.fun OR solana',
-            product: "Latest",
-            compact: "1"
-        });
+    query: 'memecoin OR "meme coin" OR pump.fun OR solana',
+    product: "Latest",
+    compact: "1",
+    fields: "author.profile_image_url,media.media_url_https,media.type,media.expanded_url"
+});
 
         const response = await fetch(
             "https://api.twitterapis.com/twitter/tweet/advanced_search?" +
