@@ -70,6 +70,8 @@ export default async function handler(req, res) {
                 secondPageTested: false
             });
         }
+        // JEDA 5 DETIK SESUAI RATE LIMIT TWEXAPI
+await new Promise(resolve => setTimeout(resolve, 5500));
 
         // HALAMAN KEDUA
         const secondResponse = await fetch(endpoint, {
