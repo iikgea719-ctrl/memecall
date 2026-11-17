@@ -412,6 +412,14 @@ style="width:100%;background:#000;border:1px solid #202020;color:#fff;padding:11
 </div>
 
 <!-- INFLUENCER FEED -->
+  <div style="display:flex;justify-content:flex-end;margin:12px 0;">
+    <small style="color:#777;">
+        INFLUENCERS · NEXT UPDATE IN
+        <span id="influencerCountdown" style="color:#00e676;">
+            60:00
+        </span>
+    </small>
+</div>
 <div id="influencerFeed">
 
     <div class="feed-item">
@@ -887,15 +895,21 @@ async function loadInfluencerPosts() {
 
         container.innerHTML = result.posts.map(post => {
             const username = String(post.username || "Unknown");
-            const text = String(post.post_text || "");
-            const url = String(post.post_url || "");
+const displayName = String(post.display_name || username);
+const profileImage = post.profile_image_url || "";
+const text = String(post.post_text || "");
+const url = String(post.post_url || "");
             const date = post.posted_at
                 ? new Date(post.posted_at).toLocaleString("id-ID")
                 : "Waktu tidak tersedia";
 
             const safeUsername = escapeInfluencerHTML(username);
-            const safeText = escapeInfluencerHTML(text);
-            const safeDate = escapeInfluencerHTML(date);
+const safeDisplayName = escapeInfluencerHTML(displayName);
+const safeProfileImage = /^https?:\/\//i.test(profileImage)
+    ? escapeInfluencerHTML(profileImage)
+    : "";
+const safeText = escapeInfluencerHTML(text);
+const safeDate = escapeInfluencerHTML(date);
 
             const safeUrl = /^https:\/\/(x\.com|twitter\.com)\//i.test(url)
                 ? url
@@ -905,16 +919,52 @@ async function loadInfluencerPosts() {
                 <div class="feed-item" data-influencer-post="true">
 
                     <div class="feed-top">
-                        <div>
-                            <span class="author">${safeUsername}</span>
-                            <span class="handle">@${safeUsername}</span>
-                        </div>
-                        <span class="source">INFLUENCER</span>
-                    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
 
-                    <div class="feed-text">${safeText}</div>
+        ${
+            safeProfileImage
+            ? `<img src="${safeProfileImage}"
+                alt="${safeDisplayName}"
+                style="width:42px;height:42px;border-radius:50%;object-fit:cover;">`
+            : `<div style="width:42px;height:42px;border-radius:50%;background:#222;display:flex;align-items:center;justify-content:center;">👤</div>`
+        }
 
-                    <div class="tags">INFLUENCER · X</div>
+        <div>
+            <span class="author">${safeDisplayName}</span>
+            <span class="handle">@${safeUsername}</span>
+        </div>
+
+    </div>
+
+    <span class="source">INFLUENCER</span>
+</div>
+
+                    
+<div class="feed-text">${safeText}</div>
+
+${
+    Array.isArray(post.media)
+    ? post.media.map(item => {
+        const mediaUrl = typeof item === "string"
+            ? item
+            : item?.url || item?.media_url || item?.image_url || "";
+
+        const safeMediaUrl = /^https?:\/\//i.test(mediaUrl)
+            ? escapeInfluencerHTML(mediaUrl)
+            : "";
+
+        return safeMediaUrl
+            ? `<img src="${safeMediaUrl}"
+                alt="Influencer post image"
+                loading="lazy"
+                style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:10px;">`
+            : "";
+    }).join("")
+    : ""
+}
+
+<div class="tags">INFLUENCER · X</div>
+
 
                     <div class="feed-bottom">
                         <span>${safeDate}</span>
@@ -953,6 +1003,35 @@ function escapeInfluencerHTML(value) {
 }
 
 loadInfluencerPosts();
+
+// COUNTDOWN INFLUENCER: UPDATE SETIAP JAM
+function updateInfluencerCountdown() {
+    const countdown = document.getElementById("influencerCountdown");
+
+    if (!countdown) return;
+
+    const now = new Date();
+    const nextHour = new Date(now);
+
+    nextHour.setHours(now.getHours() + 1);
+    nextHour.setMinutes(0, 0, 0);
+
+    const remaining = Math.max(0, nextHour - now);
+
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+
+    countdown.textContent =
+        String(minutes).padStart(2, "0") + ":" +
+        String(seconds).padStart(2, "0");
+
+    if (remaining <= 1000) {
+        loadInfluencerPosts();
+    }
+}
+
+updateInfluencerCountdown();
+setInterval(updateInfluencerCountdown, 1000);
 </script>
 </body>
 </html>
