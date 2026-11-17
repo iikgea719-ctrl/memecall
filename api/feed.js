@@ -54,10 +54,33 @@ export default async function handler(req, res) {
     } catch (error) {
         console.log("TwtAPI failed:", error.message);
     }
+    if (twtapiTweets.length > 0) {
+    const uniqueTweets = Array.from(
+        new Map(
+            twtapiTweets
+                .filter(tweet => tweet.id)
+                .map(tweet => [String(tweet.id), tweet])
+        ).values()
+    );
+
+    uniqueTweets.sort((a, b) =>
+        new Date(b.created_at) - new Date(a.created_at)
+    );
+
+    if (uniqueTweets.length > 0) {
+        return res.status(200).json({
+            success: true,
+            activeSources: ["TwtAPI"],
+            backupSources: ["Sorsa"],
+            total: uniqueTweets.length,
+            tweets: uniqueTweets
+        });
+    }
+}
 
     // TWITTERAPI.IO
     try {
-        if (twitterKey) {
+        if (false && twitterKey) {
             const params = new URLSearchParams({
                 query: "(memecoin OR pump.fun OR solana meme OR meme coin)",
                 queryType: "Latest"
