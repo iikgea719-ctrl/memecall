@@ -7,6 +7,7 @@ export default async function handler(req, res) {
     }
 
     const apiKey = process.env.SOCIALDATA_API_KEY;
+    const backupApiKey = process.env.TWITTERAPIS_API_KEY;
 
     if (!apiKey) {
         return res.status(500).json({
@@ -61,6 +62,83 @@ export default async function handler(req, res) {
             return dateB - dateA;
         });
     }
+    function mapTwitterAPIsTweet(tweet) {
+    const media = tweet.media || [];
+
+    return {
+        id: tweet.id,
+        full_text: tweet.text || "",
+        created_at: tweet.created_at || "",
+
+        user: {
+            name: tweet.author?.name || "X User",
+            username: tweet.author?.username || "",
+            profile_image_url:
+                tweet.author?.profile_image_url || ""
+        },
+
+        entities: media.map(item => ({
+            type: item.type || "photo",
+            link:
+                item.media_url_https ||
+                item.media_url ||
+                "",
+            preview:
+                item.media_url_https ||
+                item.media_url ||
+                ""
+        }))
+    };
+}
+    async function fetchTwitterAPIs() {
+    if (!backupApiKey) {
+        throw new Error("TWITTERAPIS_API_KEY belum dipasang");
+    }
+
+    let rawTweets = [];
+    let cursor = "";
+
+    for (let page = 0; page < 2; page++) {
+        const params = new URLSearchParams({
+            query,
+            product: "Latest",
+            compact: "1",
+            fields: "author.profile_image_url,media.media_url_https,media.type"
+        });
+
+        if (cursor) {
+            params.set("cursor", cursor);
+        }
+
+        const response = await fetch(
+            "https://api.twitterapis.com/twitter/tweet/advanced_search?" +
+            params.toString(),
+            {
+                headers: {
+                    "Authorization": `Bearer ${backupApiKey}`,
+                    "Accept": "application/json"
+                }
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.message || data.error || "TwitterAPIs gagal"
+            );
+        }
+
+        rawTweets.push(...(data.tweets || []));
+        cursor = data.next_cursor || "";
+
+        if (!cursor || !data.tweets?.length) {
+            break;
+        }
+    }
+
+    return rawTweets.map(mapTwitterAPIsTweet);
+}
 
     try {
         let rawTweets = [];
@@ -92,19 +170,47 @@ export default async function handler(req, res) {
             const responseText = await response.text();
 
             if (!response.ok) {
-                console.log(
-                    "SocialData status:",
-                    response.status,
-                    responseText
-                );
+    console.log(
+        "SocialData status:",
+        response.status,
+        responseText
+    );
 
-                return res.status(response.status).json({
-                    success: false,
-                    source: "SocialData",
-                    error: "SocialData API gagal mengambil tweet",
-                    details: responseText
-                });
-            }
+    if (response.status === 402) {
+        try {
+            const backupTweets = await fetchTwitterAPIs();
+
+            const relevantTweets = backupTweets.filter(isRelevant);
+            const uniqueTweets = removeDuplicates(relevantTweets);
+
+            sortTweets(uniqueTweets);
+
+            return res.status(200).json({
+                success: true,
+                activeSources: ["TwitterAPIs"],
+                backupSources: ["SocialData"],
+                total: uniqueTweets.length,
+                tweets: uniqueTweets
+            });
+
+        } catch (backupError) {
+            console.log("TwitterAPIs backup failed:", backupError.message);
+
+            return res.status(502).json({
+                success: false,
+                source: "TwitterAPIs",
+                error: backupError.message
+            });
+        }
+    }
+
+    return res.status(response.status).json({
+        success: false,
+        source: "SocialData",
+        error: "SocialData API gagal mengambil tweet",
+        details: responseText
+    });
+}
 
             const data = JSON.parse(responseText);
             const pageTweets = data.tweets || [];
@@ -158,12 +264,12 @@ export default async function handler(req, res) {
         sortTweets(uniqueTweets);
 
         return res.status(200).json({
-            success: true,
-            activeSources: ["SocialData"],
-            backupSources: [],
-            total: uniqueTweets.length,
-            tweets: uniqueTweets
-        });
+    success: true,
+    activeSources: ["SocialData"],
+    backupSources: ["TwitterAPIs"],
+    total: uniqueTweets.length,
+    tweets: uniqueTweets
+});
 
     } catch (error) {
         console.log("SocialData failed:", error.message);
