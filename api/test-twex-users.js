@@ -16,14 +16,18 @@ export default async function handler(req, res) {
         });
     }
 
-    const username = String(
-        req.query.username || "blknoiz06"
-    ).replace(/^@/, "").trim();
+    const usernames = String(
+        req.query.usernames || "blknoiz06,soljakey,0xbreadguy,0xcygaar,0xwave"
+    )
+        .split(",")
+        .map(name => name.replace(/^@/, "").trim())
+        .filter(Boolean)
+        .slice(0, 5);
 
-    if (!username) {
+    if (!usernames.length) {
         return res.status(400).json({
             success: false,
-            error: "Username kosong"
+            error: "Tidak ada username"
         });
     }
 
@@ -36,24 +40,17 @@ export default async function handler(req, res) {
                     "Authorization": `Bearer ${apiKey}`,
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify([username])
+                body: JSON.stringify(usernames)
             }
         );
 
         const result = await response.json();
 
-        if (!response.ok) {
-            return res.status(response.status).json({
-                success: false,
-                provider: "TwexAPI",
-                error: result
-            });
-        }
-
-        return res.status(200).json({
-            success: true,
+        return res.status(response.ok ? 200 : response.status).json({
+            success: response.ok,
             provider: "TwexAPI",
-            testedUsername: username,
+            requestedCount: usernames.length,
+            testedUsernames: usernames,
             result
         });
 
