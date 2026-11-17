@@ -380,11 +380,34 @@ export default async function handler(req, res) {
         const account = accounts[0];
 
         // Urutan provider: utama, backup 1, backup 2.
-        const providers = [
-            tryTwex,
-            tryWeir,
-            tryXFetch
-        ];
+        
+const testProvider = String(
+    req.query.testProvider || ""
+).toLowerCase();
+
+let providers;
+
+if (testProvider === "weir") {
+    providers = [
+        tryWeir,
+        tryXFetch
+    ];
+} else if (testProvider === "xfetch") {
+    providers = [
+        tryXFetch
+    ];
+} else if (!testProvider) {
+    providers = [
+        tryTwex,
+        tryWeir,
+        tryXFetch
+    ];
+} else {
+    return res.status(400).json({
+        success: false,
+        error: "Invalid testProvider. Use weir or xfetch."
+    });
+}
 
         let providerResult = null;
 
@@ -465,7 +488,8 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
             success: true,
-            provider: providerResult.provider,
+testMode: Boolean(testProvider),
+provider: providerResult.provider,
             username: account.username,
             profileUpdated: profileResult.updated,
             profileError:
