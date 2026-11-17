@@ -56,12 +56,22 @@ export default async function handler(req, res) {
     }
     if (twtapiTweets.length > 0) {
     const uniqueTweets = Array.from(
-        new Map(
-            twtapiTweets
-                .filter(tweet => tweet.id)
-                .map(tweet => [String(tweet.id), tweet])
-        ).values()
-    );
+    new Map(
+        relevantTweets.map(tweet => {
+            const normalizedText = (tweet.full_text || "")
+                .toLowerCase()
+                .replace(/https?:\/\/\S+/g, "")
+                .replace(/@\w+/g, "")
+                .replace(/[^a-z0-9]/g, "")
+                .trim();
+
+            return [
+                normalizedText || tweet.id,
+                tweet
+            ];
+        })
+    ).values()
+);
 
     uniqueTweets.sort((a, b) =>
         new Date(b.created_at) - new Date(a.created_at)
