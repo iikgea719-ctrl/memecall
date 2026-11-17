@@ -49,7 +49,7 @@ export default async function handler(req, res) {
             success: response.ok,
             provider: "TwexAPI",
             testedUsername: username,
-            requestedTweets: 5,
+            requestedTweets: 20,
             result
         });
 
