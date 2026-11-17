@@ -9,14 +9,18 @@ export default async function handler(req, res) {
 
     const twitterKey = process.env.TWITTERAPIS_API_KEY;
     const xdataKey = process.env.XDATAAPI_API_KEY;
-    const directXData = req.query.provider === "xdata";
-    const query = "memecoin";
 
+    const query = "memecoin";
+    const mode = req.query.mode || "normal";
     const results = [];
 
     async function testTwitterAPIs() {
+        if (mode === "simulate") {
+            throw new Error("SIMULATED FAILURE: TwitterAPIs sengaja dilewati");
+        }
+
         if (!twitterKey) {
-            throw new Error("TwitterAPIS key belum dipasang");
+            throw new Error("TWITTERAPIS_API_KEY belum dipasang");
         }
 
         const params = new URLSearchParams({
@@ -47,7 +51,7 @@ export default async function handler(req, res) {
         const tweets = data.tweets || [];
 
         if (!tweets.length) {
-            throw new Error("Tidak ada postingan");
+            throw new Error("TwitterAPIs tidak menemukan postingan");
         }
 
         return tweets.slice(0, 3).map(tweet => ({
@@ -59,7 +63,7 @@ export default async function handler(req, res) {
 
     async function testXDataAPI() {
         if (!xdataKey) {
-            throw new Error("XDataAPI key belum dipasang");
+            throw new Error("XDATAAPI_API_KEY belum dipasang");
         }
 
         const params = new URLSearchParams({
@@ -88,7 +92,7 @@ export default async function handler(req, res) {
         }
 
         if (!Array.isArray(data.data) || !data.data.length) {
-            throw new Error("Tidak ada postingan");
+            throw new Error("XDataAPI tidak menemukan postingan");
         }
 
         return data.data.slice(0, 3).map(tweet => ({
@@ -98,30 +102,6 @@ export default async function handler(req, res) {
         }));
     }
 
-    // MODE TES XDATAAPI LANGSUNG
-    if (directXData) {
-        try {
-            const tweets = await testXDataAPI();
-
-            return res.status(200).json({
-                success: true,
-                mode: "DIRECT XDATAAPI TEST",
-                activeSource: "XDataAPI",
-                total: tweets.length,
-                tweets
-            });
-
-        } catch (error) {
-            return res.status(200).json({
-                success: false,
-                mode: "DIRECT XDATAAPI TEST",
-                activeSource: null,
-                error: error.message
-            });
-        }
-    }
-
-    // MODE BACKUP BERURUTAN
     const providers = [
         {
             name: "TwitterAPIs",
@@ -145,6 +125,7 @@ export default async function handler(req, res) {
 
             return res.status(200).json({
                 success: true,
+                mode,
                 activeSource: provider.name,
                 testedProviders: results,
                 tweets
@@ -161,6 +142,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
         success: false,
+        mode,
         activeSource: null,
         testedProviders: results
     });
