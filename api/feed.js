@@ -80,7 +80,7 @@ export default async function handler(req, res) {
             const params = new URLSearchParams({
                 q: "memecoin OR pump.fun OR solana meme OR meme coin",
                 product: "Latest",
-                count: "20"
+                count: "200"
             });
 
             const response = await fetch(
