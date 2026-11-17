@@ -9,15 +9,14 @@ export default async function handler(req, res) {
 
     const twitterKey = process.env.TWITTERAPIS_API_KEY;
     const xdataKey = process.env.XDATAAPI_API_KEY;
-
+    const directXData = req.query.provider === "xdata";
     const query = "memecoin";
 
     const results = [];
-    let activeSource = null;
 
     async function testTwitterAPIs() {
         if (!twitterKey) {
-            throw new Error("TwitterAPIs key belum dipasang");
+            throw new Error("TwitterAPIS key belum dipasang");
         }
 
         const params = new URLSearchParams({
@@ -99,6 +98,30 @@ export default async function handler(req, res) {
         }));
     }
 
+    // MODE TES XDATAAPI LANGSUNG
+    if (directXData) {
+        try {
+            const tweets = await testXDataAPI();
+
+            return res.status(200).json({
+                success: true,
+                mode: "DIRECT XDATAAPI TEST",
+                activeSource: "XDataAPI",
+                total: tweets.length,
+                tweets
+            });
+
+        } catch (error) {
+            return res.status(200).json({
+                success: false,
+                mode: "DIRECT XDATAAPI TEST",
+                activeSource: null,
+                error: error.message
+            });
+        }
+    }
+
+    // MODE BACKUP BERURUTAN
     const providers = [
         {
             name: "TwitterAPIs",
@@ -120,11 +143,9 @@ export default async function handler(req, res) {
                 total: tweets.length
             });
 
-            activeSource = provider.name;
-
             return res.status(200).json({
                 success: true,
-                activeSource,
+                activeSource: provider.name,
                 testedProviders: results,
                 tweets
             });
