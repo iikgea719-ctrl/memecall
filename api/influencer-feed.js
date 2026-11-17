@@ -20,21 +20,21 @@ export default async function handler(req, res) {
     try {
         const baseUrl = supabaseUrl.replace(/\/$/, "");
 
-        const response = await fetch(
+        const headers = {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`
+        };
+
+        // Ambil postingan Influencer
+        const postsResponse = await fetch(
             `${baseUrl}/rest/v1/influencer_posts?select=id,post_id,username,post_text,media,post_url,posted_at,saved_at&order=posted_at.desc&limit=100`,
-            {
-                method: "GET",
-                headers: {
-                    apikey: supabaseKey,
-                    Authorization: `Bearer ${supabaseKey}`
-                }
-            }
+            { headers }
         );
 
-        const data = await response.json();
+        const posts = await postsResponse.json();
 
-        if (!response.ok) {
-            console.error("Supabase error:", data);
+        if (!postsResponse.ok) {
+            console.error("Posts error:", posts);
 
             return res.status(500).json({
                 success: false,
@@ -42,11 +42,48 @@ export default async function handler(req, res) {
             });
         }
 
+        // Ambil data akun dan foto profil
+        const accountsResponse = await fetch(
+            `${baseUrl}/rest/v1/influencer_accounts?select=username,display_name,profile_image_url`,
+            { headers }
+        );
+
+        const accounts = await accountsResponse.json();
+
+        if (!accountsResponse.ok) {
+            console.error("Accounts error:", accounts);
+
+            return res.status(500).json({
+                success: false,
+                error: "Failed to load influencer accounts"
+            });
+        }
+
+        // Gabungkan postingan dengan data profil
+        const accountMap = new Map(
+            accounts.map(account => [
+                String(account.username).toLowerCase(),
+                account
+            ])
+        );
+
+        const combinedPosts = posts.map(post => {
+            const account = accountMap.get(
+                String(post.username).toLowerCase()
+            );
+
+            return {
+                ...post,
+                display_name: account?.display_name || post.username,
+                profile_image_url: account?.profile_image_url || null
+            };
+        });
+
         return res.status(200).json({
             success: true,
             source: "Supabase",
-            total: data.length,
-            posts: data
+            total: combinedPosts.length,
+            posts: combinedPosts
         });
 
     } catch (error) {
