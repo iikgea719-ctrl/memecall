@@ -855,6 +855,104 @@ async function translateTweet(id) {
 }
 
 </script>
+<script>
+async function loadInfluencerPosts() {
+    const container = document.getElementById("influencerFeed");
 
+    if (!container) return;
+
+    try {
+        const response = await fetch("/api/influencer-feed");
+
+        if (!response.ok) {
+            throw new Error("Gagal mengambil data Influencer");
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !Array.isArray(result.posts)) {
+            throw new Error("Format data tidak valid");
+        }
+
+        if (result.posts.length === 0) {
+            container.innerHTML = `
+                <div class="feed-item">
+                    <div class="feed-text">
+                        Belum ada postingan Influencer.
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = result.posts.map(post => {
+            const username = String(post.username || "Unknown");
+            const text = String(post.post_text || "");
+            const url = String(post.post_url || "");
+            const date = post.posted_at
+                ? new Date(post.posted_at).toLocaleString("id-ID")
+                : "Waktu tidak tersedia";
+
+            const safeUsername = escapeInfluencerHTML(username);
+            const safeText = escapeInfluencerHTML(text);
+            const safeDate = escapeInfluencerHTML(date);
+
+            const safeUrl = /^https:\/\/(x\.com|twitter\.com)\//i.test(url)
+                ? url
+                : "";
+
+            return `
+                <div class="feed-item" data-influencer-post="true">
+
+                    <div class="feed-top">
+                        <div>
+                            <span class="author">${safeUsername}</span>
+                            <span class="handle">@${safeUsername}</span>
+                        </div>
+                        <span class="source">INFLUENCER</span>
+                    </div>
+
+                    <div class="feed-text">${safeText}</div>
+
+                    <div class="tags">INFLUENCER · X</div>
+
+                    <div class="feed-bottom">
+                        <span>${safeDate}</span>
+                        ${
+                            safeUrl
+                            ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">View on X ↗</a>`
+                            : `<span>Source: X</span>`
+                        }
+                    </div>
+
+                </div>
+            `;
+        }).join("");
+
+    } catch (error) {
+        console.error("Influencer feed error:", error);
+
+        container.innerHTML = `
+            <div class="feed-item">
+                <div class="feed-text">
+                    Gagal memuat Influencer posts. Silakan coba lagi.
+                </div>
+            </div>
+        `;
+    }
+}
+
+function escapeInfluencerHTML(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
+}
+
+loadInfluencerPosts();
+</script>
 </body>
 </html>
