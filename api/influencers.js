@@ -34,13 +34,14 @@ export default async function handler(req, res) {
         "Content-Type": "application/json"
     };
 
+    const wait = ms =>
+        new Promise(resolve => setTimeout(resolve, ms));
+
     try {
-        // Ambil satu akun aktif yang paling lama belum diperiksa
+        // Pilih akun yang paling lama belum diperiksa
         const accountsResponse = await fetch(
-            `${baseUrl}/rest/v1/influencer_accounts?is_active=eq.true&select=id,username&order=last_checked_at.asc.nullsfirst&limit=1`,
-            {
-                headers: supabaseHeaders
-            }
+            `${baseUrl}/rest/v1/influencer_accounts?is_active=eq.true&select=id,username,profile_image_url&order=last_checked_at.asc.nullsfirst&limit=1`,
+            { headers: supabaseHeaders }
         );
 
         const accounts = await accountsResponse.json();
@@ -63,7 +64,72 @@ export default async function handler(req, res) {
 
         const account = accounts[0];
 
-        // Ambil 20 postingan terbaru dari TwexAPI
+        let profileUpdated = false;
+        let profileError = null;
+
+        // Ambil foto profil jika masih kosong
+        if (!account.profile_image_url) {
+            try {
+                const profileResponse = await fetch(
+                    "https://api.twexapi.io/twitter/users",
+                    {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${apiKey}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify([
+                            account.username
+                        ])
+                    }
+                );
+
+                const profileResult = await profileResponse.json();
+
+                const profile = Array.isArray(profileResult?.data)
+                    ? profileResult.data[0]
+                    : null;
+
+                const profileImage =
+                    profile?.profileImageUrlHttps ||
+                    profile?.avatar?.image_url ||
+                    null;
+
+                if (profileResponse.ok && profileImage) {
+                    const updateProfileResponse = await fetch(
+                        `${baseUrl}/rest/v1/influencer_accounts?id=eq.${account.id}`,
+                        {
+                            method: "PATCH",
+                            headers: {
+                                ...supabaseHeaders,
+                                Prefer: "return=minimal"
+                            },
+                            body: JSON.stringify({
+                                profile_image_url: profileImage
+                            })
+                        }
+                    );
+
+                    if (updateProfileResponse.ok) {
+                        profileUpdated = true;
+                    } else {
+                        profileError =
+                            await updateProfileResponse.text();
+                    }
+                } else {
+                    profileError =
+                        "Profile image not found or TwexAPI failed";
+                }
+
+            } catch (error) {
+                profileError = error.message;
+            }
+
+            // Jeda minimal 5,5 detik antar-request TwexAPI
+            await wait(5500);
+        }
+
+        // Ambil 20 postingan terbaru
         const apiResponse = await fetch(
             `https://api.twexapi.io/twitter/${encodeURIComponent(account.username)}/timeline/page`,
             {
@@ -85,14 +151,14 @@ export default async function handler(req, res) {
             return res.status(502).json({
                 success: false,
                 username: account.username,
-                error: "TwexAPI request failed",
+                error: "TwexAPI timeline request failed",
                 details: apiResult
             });
         }
 
         const tweets = apiResult.data;
 
-        // Ubah format TwexAPI menjadi format Supabase
+        // Semua postingan akun disimpan tanpa filter keyword
         const posts = tweets
             .filter(tweet => tweet.tweet_id)
             .map(tweet => {
@@ -113,21 +179,21 @@ export default async function handler(req, res) {
                 return {
                     post_id: tweetId,
                     account_id: account.id,
-                    username: username,
+                    username,
                     post_text: tweet.full_text || "",
                     media:
                         tweet.media ||
                         tweet.extended_entities?.media ||
                         [],
-                    post_url: `https://x.com/${username}/status/${tweetId}`,
+                    post_url:
+                        `https://x.com/${username}/status/${tweetId}`,
                     posted_at: postedAt
                 };
             });
 
-        // Simpan hanya postingan baru.
-        // Postingan lama tidak dihapus atau ditimpa.
         let saved = 0;
 
+        // Simpan hanya postingan baru
         if (posts.length > 0) {
             const saveResponse = await fetch(
                 `${baseUrl}/rest/v1/influencer_posts?on_conflict=post_id`,
@@ -157,8 +223,8 @@ export default async function handler(req, res) {
                 : 0;
         }
 
-        // Tandai akun sudah berhasil diperiksa
-        const updateResponse = await fetch(
+        // Pindahkan akun ke belakang antrean
+        const queueResponse = await fetch(
             `${baseUrl}/rest/v1/influencer_accounts?id=eq.${account.id}`,
             {
                 method: "PATCH",
@@ -172,14 +238,11 @@ export default async function handler(req, res) {
             }
         );
 
-        if (!updateResponse.ok) {
-            const updateError = await updateResponse.text();
-
+        if (!queueResponse.ok) {
             return res.status(500).json({
                 success: false,
                 username: account.username,
                 error: "Failed to update account queue",
-                details: updateError,
                 saved
             });
         }
@@ -188,6 +251,8 @@ export default async function handler(req, res) {
             success: true,
             provider: "TwexAPI",
             username: account.username,
+            profileUpdated,
+            profileError,
             fetched: tweets.length,
             saved,
             processed: 1,
