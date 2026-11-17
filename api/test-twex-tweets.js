@@ -44,12 +44,18 @@ export default async function handler(req, res) {
         );
 
         const result = await response.json();
+        const data = result?.data;
 
         return res.status(response.ok ? 200 : response.status).json({
             success: response.ok,
             provider: "TwexAPI",
             testedUsername: username,
             requestedTweets: 20,
+            actualTweets: Array.isArray(data) ? data.length : null,
+            pagination: {
+                next_cursor: result?.next_cursor ?? data?.next_cursor ?? null,
+                nextCursor: result?.nextCursor ?? data?.nextCursor ?? null
+            },
             result
         });
 
