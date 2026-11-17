@@ -100,7 +100,7 @@ export default async function handler(req, res) {
 
     for (let page = 0; page < 2; page++) {
         const params = new URLSearchParams({
-            query,
+            query: query.replace(/^\(|\)$/g, ""),
             product: "Latest",
             compact: "1",
             fields: "author.profile_image_url,media.media_url_https,media.type"
