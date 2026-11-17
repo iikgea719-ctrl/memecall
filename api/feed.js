@@ -74,67 +74,88 @@ export default async function handler(req, res) {
         });
     }
 
+    
     // TWTAPI - SUMBER UTAMA
     try {
         if (twtapiKey) {
-            const params = new URLSearchParams({
-                q: "memecoin OR pump.fun OR solana meme OR meme coin",
-                product: "Latest",
-                count: "200"
-            });
+            let rawTweets = [];
+            let cursor = "";
 
-            const response = await fetch(
-                "https://api.twtapi.io/search?" + params.toString(),
-                {
-                    headers: {
-                        "X-API-Key": twtapiKey
+            // AMBIL MAKSIMAL 2 HALAMAN
+            for (let page = 0; page < 2; page++) {
+                const params = new URLSearchParams({
+                    q: "memecoin OR pump.fun OR solana meme OR meme coin",
+                    product: "Latest",
+                    count: "200"
+                });
+
+                if (cursor) {
+                    params.set("cursor", cursor);
+                }
+
+                const response = await fetch(
+                    "https://api.twtapi.io/search?" + params.toString(),
+                    {
+                        headers: {
+                            "X-API-Key": twtapiKey
+                        }
                     }
-                }
-            );
+                );
 
-            if (response.ok) {
+                if (!response.ok) {
+                    console.log("TwtAPI status:", response.status);
+                    break;
+                }
+
                 const data = await response.json();
+                const pageTweets = data.tweets || [];
 
-                const tweets = (data.tweets || []).map(tweet => ({
-                    id: tweet.tweet_id || tweet.id,
-                    full_text: tweet.text || "",
-                    created_at: tweet.created_at || "",
-                    user: {
-                        name: tweet.user?.name || "X User",
-                        username: tweet.user?.screen_name || "",
-                        profile_image_url:
-                            tweet.user?.avatar_url || ""
-                    },
-                    entities: (tweet.media || []).map(item => ({
-                        type: item.type || "photo",
-                        link: item.url || item.media_url || "",
-                        preview:
-                            item.thumb || item.url || item.media_url || ""
-                    }))
-                }));
+                rawTweets.push(...pageTweets);
 
-                const relevantTweets = tweets.filter(isRelevant);
+                cursor = data.cursor_bottom || "";
 
-                const uniqueTweets = removeDuplicates(relevantTweets);
-
-                sortTweets(uniqueTweets);
-
-                if (uniqueTweets.length > 0) {
-                    return res.status(200).json({
-                        success: true,
-                        activeSources: ["TwtAPI"],
-                        backupSources: ["Sorsa"],
-                        total: uniqueTweets.length,
-                        tweets: uniqueTweets
-                    });
+                if (!cursor || pageTweets.length === 0) {
+                    break;
                 }
-            } else {
-                console.log("TwtAPI status:", response.status);
+            }
+
+            const tweets = rawTweets.map(tweet => ({
+                id: tweet.tweet_id || tweet.id,
+                full_text: tweet.text || "",
+                created_at: tweet.created_at || "",
+                user: {
+                    name: tweet.user?.name || "X User",
+                    username: tweet.user?.screen_name || "",
+                    profile_image_url:
+                        tweet.user?.avatar_url || ""
+                },
+                entities: (tweet.media || []).map(item => ({
+                    type: item.type || "photo",
+                    link: item.url || item.media_url || "",
+                    preview:
+                        item.thumb || item.url || item.media_url || ""
+                }))
+            }));
+
+            const relevantTweets = tweets.filter(isRelevant);
+            const uniqueTweets = removeDuplicates(relevantTweets);
+
+            sortTweets(uniqueTweets);
+
+            if (uniqueTweets.length > 0) {
+                return res.status(200).json({
+                    success: true,
+                    activeSources: ["TwtAPI"],
+                    backupSources: ["Sorsa"],
+                    total: uniqueTweets.length,
+                    tweets: uniqueTweets
+                });
             }
         }
     } catch (error) {
         console.log("TwtAPI failed:", error.message);
     }
+
 
     // SORSA - SUMBER CADANGAN
     try {
