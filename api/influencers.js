@@ -9,10 +9,17 @@ export default async function handler(req, res) {
     const twitterKey = process.env.TWITTRAPI_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SECRET_KEY;
+    const cronSecret = process.env.CRON_SECRET;
 
-    if (!twitterKey || !supabaseUrl || !supabaseKey) {
+    if (!twitterKey || !supabaseUrl || !supabaseKey || !cronSecret) {
         return res.status(500).json({
             error: "Missing API environment variables"
+        });
+    }
+
+    if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+        return res.status(401).json({
+            error: "Unauthorized"
         });
     }
 
