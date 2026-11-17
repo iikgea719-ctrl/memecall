@@ -398,8 +398,11 @@ style="width:100%;background:#000;border:1px solid #202020;color:#fff;padding:11
 <section id="latestSection">
 
 <div class="section-header">
-<div class="section-title">Latest X Discussions</div>
-<small>ALL POSTS</small>
+    <div class="section-title">Latest X Discussions</div>
+    <small>
+        ALL POSTS · REFRESH IN
+        <span id="refreshCountdown" style="color:#00e676;">05:00</span>
+    </small>
 </div>
 
 <div id="xFeed">
@@ -830,8 +833,35 @@ ${mediaHTML}
     }
 }
 
+let refreshTimeLeft = 300;
+
+const refreshCountdown = document.getElementById("refreshCountdown");
+
+function updateRefreshCountdown() {
+    const minutes = Math.floor(refreshTimeLeft / 60);
+    const seconds = refreshTimeLeft % 60;
+
+    refreshCountdown.textContent =
+        String(minutes).padStart(2, "0") + ":" +
+        String(seconds).padStart(2, "0");
+}
+
 loadXPosts();
-setInterval(loadXPosts, 300000);
+updateRefreshCountdown();
+
+setInterval(() => {
+    if (refreshTimeLeft > 0) {
+        refreshTimeLeft--;
+    }
+
+    updateRefreshCountdown();
+}, 1000);
+
+setInterval(() => {
+    refreshTimeLeft = 300;
+    updateRefreshCountdown();
+    loadXPosts();
+}, 300000);
   
 async function translateTweet(id) {
     const element = document.getElementById("tweet-" + id);
