@@ -16,20 +16,22 @@ export default async function handler(req, res) {
         });
     }
 
-    const usernames = String(
-        req.query.usernames || "blknoiz06,soljakey,0xbreadguy,0xcygaar,0xwave"
-    )
-        .split(",")
-        .map(name => name.replace(/^@/, "").trim())
-        .filter(Boolean)
-        .slice(0, 5);
+    let usernames = [];
 
-    if (!usernames.length) {
-        return res.status(400).json({
-            success: false,
-            error: "Tidak ada username"
-        });
+    if (req.query.username) {
+        usernames = [String(req.query.username)];
+    } else {
+        usernames = String(
+            req.query.usernames ||
+            "blknoiz06,soljakey,0xbreadguy,0xcygaar,0xwave"
+        ).split(",");
     }
+
+    usernames = [...new Set(
+        usernames
+            .map(name => name.replace(/^@/, "").trim())
+            .filter(Boolean)
+    )].slice(0, 5);
 
     try {
         const response = await fetch(
