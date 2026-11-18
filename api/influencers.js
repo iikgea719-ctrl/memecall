@@ -183,6 +183,48 @@ export default async function handler(req, res) {
             throw new Error("Provider returned invalid JSON");
         }
     }
+    
+function isAccountNotFound(response, result) {
+    const status = response.status;
+
+    const code = String(
+        result?.code ||
+        result?.status ||
+        result?.error_code ||
+        ""
+    ).toLowerCase();
+
+    const message = String(
+        result?.message ||
+        result?.error ||
+        result?.msg ||
+        ""
+    ).toLowerCase();
+
+    return (
+    code === "user_not_found" ||
+    code === "account_not_found" ||
+    /user not found|account not found|profile not found|user does not exist|account does not exist/.test(message)
+);
+}
+
+function providerError(response, result, label) {
+    const error = new Error(
+        `${label} HTTP ${response.status}: ` +
+        (
+            result?.message ||
+            result?.error ||
+            result?.msg ||
+            "Request failed"
+        )
+    );
+
+    error.isAccountNotFound =
+        isAccountNotFound(response, result);
+
+    return error;
+}
+
 
     // ==========================================
     // NORMALISASI POSTINGAN
@@ -359,12 +401,15 @@ export default async function handler(req, res) {
 
         const result = await readJson(response);
 
-        if (!response.ok || !Array.isArray(result?.data)) {
-            throw new Error(
-                `Timeline HTTP ${response.status}: ` +
-                (result?.message || result?.error || "Request failed")
-            );
-        }
+        
+if (!response.ok || !Array.isArray(result?.data)) {
+    throw providerError(
+        response,
+        result,
+        "TwexAPI Timeline"
+    );
+}
+
 
         return {
             provider: "TwexAPI",
@@ -428,12 +473,15 @@ export default async function handler(req, res) {
 
         const result = await readJson(response);
 
-        if (!response.ok || !Array.isArray(result?.data)) {
-            throw new Error(
-                `Timeline HTTP ${response.status}: ` +
-                (result?.message || result?.error || "Request failed")
-            );
-        }
+        
+if (!response.ok || !Array.isArray(result?.data)) {
+    throw providerError(
+        response,
+        result,
+        "Weir Timeline"
+    );
+}
+
 
         return {
             provider: "Weir",
@@ -469,15 +517,18 @@ export default async function handler(req, res) {
 
         const result = await readJson(response);
 
-        if (
-            !response.ok ||
-            !Array.isArray(result?.data?.recent_tweets)
-        ) {
-            throw new Error(
-                `Profile/timeline HTTP ${response.status}: ` +
-                (result?.message || result?.error || "Invalid response")
-            );
-        }
+        
+if (
+    !response.ok ||
+    !Array.isArray(result?.data?.recent_tweets)
+) {
+    throw providerError(
+        response,
+        result,
+        "XFetch Profile/Timeline"
+    );
+}
+
 
         return {
             provider: "XFetch",
@@ -491,6 +542,31 @@ export default async function handler(req, res) {
     // ==========================================
     // PINDAHKAN AKUN KE BELAKANG ANTREAN
     // ==========================================
+    
+async function deactivateAccount(account) {
+    const response = await fetch(
+        `${baseUrl}/rest/v1/influencer_accounts?id=eq.${account.id}`,
+        {
+            method: "PATCH",
+            headers: {
+                ...supabaseHeaders,
+                Prefer: "return=minimal"
+            },
+            body: JSON.stringify({
+                is_active: false,
+                last_checked_at: new Date().toISOString()
+            })
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            "Gagal menonaktifkan akun: " +
+            await response.text()
+        );
+    }
+}
+
 
     async function moveAccountToBack(account) {
         const response = await fetch(
@@ -582,6 +658,7 @@ export default async function handler(req, res) {
         // ======================================
 
         let providerResult = null;
+let notFoundCount = 0;
 
         for (const provider of providers) {
             const providerName = {
@@ -614,6 +691,9 @@ export default async function handler(req, res) {
                     account.username,
                     error.message
                 );
+                                if (error.isAccountNotFound === true) {
+                    notFoundCount++;
+                }
 
                 providerErrors.push({
                     provider: providerName,
@@ -626,17 +706,36 @@ export default async function handler(req, res) {
         // SEMUA PROVIDER GAGAL
         // ======================================
 
-        if (!providerResult) {
-            await moveAccountToBack(account);
+        
+if (!providerResult) {
 
-            return sendJson(502, {
-                success: false,
-                username: account.username,
-                error: "All influencer providers failed",
-                providerErrors,
-                processed: 1
-            });
-        }
+    if (
+        !testProvider &&
+        notFoundCount === providers.length
+    ) {
+        await deactivateAccount(account);
+
+        return sendJson(200, {
+            success: true,
+            username: account.username,
+            deactivated: true,
+            reason: "Account not found by all providers",
+            processed: 1,
+            message: "Invalid influencer account automatically disabled"
+        });
+    }
+
+    await moveAccountToBack(account);
+
+    return sendJson(502, {
+        success: false,
+        username: account.username,
+        error: "All influencer providers failed",
+        providerErrors,
+        processed: 1
+    });
+}
+
 
         // ======================================
         // UPDATE FOTO PROFIL
