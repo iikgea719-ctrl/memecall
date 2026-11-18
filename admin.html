@@ -1,0 +1,264 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MemeCall Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080b12;color:#e8edf7;font-family:Arial,sans-serif}
+main{max-width:1050px;margin:auto;padding:24px 16px}
+h1{font-size:25px;margin-bottom:5px}
+.muted{color:#8993a7;font-size:13px}
+.panel{background:#111827;border:1px solid #263247;border-radius:13px;padding:18px;margin:16px 0}
+input{width:100%;padding:13px;margin:8px 0;background:#080e19;border:1px solid #344158;border-radius:8px;color:white}
+button{padding:12px 16px;border:0;border-radius:8px;background:#4778ef;color:white;font-weight:bold;cursor:pointer}
+button.secondary{background:#263247}
+button:disabled{opacity:.5}
+.hidden{display:none!important}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.stat{background:#172235;padding:15px;border-radius:10px}
+.stat strong{display:block;font-size:23px;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:550px}
+th,td{text-align:left;padding:11px;border-bottom:1px solid #293449}
+.table-wrap{overflow-x:auto}
+.good{color:#55d69a}.bad{color:#ff7373}.unknown{color:#f2c66d}
+#message{white-space:pre-wrap;color:#f2c66d;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>MemeCall Admin</h1>
+  <div class="muted">API Credit & Usage Monitoring</div>
+
+  <section id="login" class="panel">
+    <h3>Admin Login</h3>
+    <input id="email" type="email" placeholder="Email admin" autocomplete="username">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="loginBtn" onclick="login()">Login</button>
+    <p id="message"></p>
+  </section>
+
+  <section id="dashboard" class="hidden">
+    <div class="panel">
+      <div class="grid">
+        <div>
+          <div class="muted">Status akun</div>
+          <strong class="good">Admin terverifikasi</strong>
+        </div>
+        <div>
+          <div class="muted">Data provider</div>
+          <strong id="providerCount">0</strong>
+        </div>
+        <div>
+          <div class="muted">Riwayat pemakaian</div>
+          <strong id="logCount">0</strong>
+        </div>
+      </div>
+      <br>
+      <button onclick="loadData()">Refresh Data</button>
+      <button class="secondary" onclick="logout()">Logout</button>
+      <p id="updated" class="muted"></p>
+    </div>
+
+    <div class="panel">
+      <h3>Status API Provider</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Modul</th>
+              <th>Provider</th>
+              <th>Peran</th>
+              <th>Status</th>
+              <th>Sisa Kredit</th>
+              <th>Terakhir Digunakan</th>
+            </tr>
+          </thead>
+          <tbody id="providers"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Riwayat Penggunaan API</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Waktu</th>
+              <th>Modul</th>
+              <th>Provider</th>
+              <th>Akun</th>
+              <th>Status</th>
+              <th>Kredit Terpakai</th>
+            </tr>
+          </thead>
+          <tbody id="logs"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://zsphagpdzypjvwnxunsi.supabase.co";
+const SUPABASE_KEY = "sb_publishable_bjVzYzOb7HaT3EqQ87gyGQ__B1ZOfhk";
+
+const client = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+const message = document.getElementById("message");
+
+function safe(value) {
+  const element = document.createElement("span");
+  element.textContent = value == null ? "-" : String(value);
+  return element.innerHTML;
+}
+
+function dateText(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? "-" : date.toLocaleString("id-ID");
+}
+
+function showLogin() {
+  document.getElementById("login").classList.remove("hidden");
+  document.getElementById("dashboard").classList.add("hidden");
+}
+
+function showDashboard() {
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+}
+
+async function login() {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const button = document.getElementById("loginBtn");
+
+  if (!email || !password) {
+    message.textContent = "Masukkan email dan password.";
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "Memeriksa login...";
+
+  try {
+    const { error } = await client.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) throw error;
+
+    await loadData();
+  } catch (error) {
+    message.textContent = error.message || "Login gagal.";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadData() {
+  message.textContent = "";
+
+  const { data, error } = await client.auth.getSession();
+
+  if (error || !data.session) {
+    showLogin();
+    message.textContent = "Silakan login kembali.";
+    return;
+  }
+
+  const response = await fetch(
+    "/api/test-backup?mode=admin-monitor",
+    {
+      headers: {
+        Authorization: "Bearer " + data.session.access_token
+      },
+      cache: "no-store"
+    }
+  );
+
+  const result = await response.json();
+
+  if (response.status === 401 || response.status === 403) {
+    await client.auth.signOut();
+    showLogin();
+    message.textContent = result.error || "Akses admin ditolak.";
+    return;
+  }
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.error || "Gagal mengambil data.");
+  }
+
+  showDashboard();
+
+  const providers = result.providers || [];
+  const logs = result.logs || [];
+
+  document.getElementById("providerCount").textContent = providers.length;
+  document.getElementById("logCount").textContent = logs.length;
+
+  document.getElementById("providers").innerHTML =
+    providers.map(item => `
+      <tr>
+        <td>${safe(item.module)}</td>
+        <td>${safe(item.provider)}</td>
+        <td>${safe(item.role)}</td>
+        <td>${safe(item.status)}</td>
+        <td>${item.credits_remaining == null
+          ? '<span class="unknown">Belum diketahui</span>'
+          : safe(item.credits_remaining)}</td>
+        <td>${safe(dateText(item.last_used_at))}</td>
+      </tr>
+    `).join("") || '<tr><td colspan="6">Belum ada data provider.</td></tr>';
+
+  document.getElementById("logs").innerHTML =
+    logs.map(item => `
+      <tr>
+        <td>${safe(dateText(item.created_at))}</td>
+        <td>${safe(item.module)}</td>
+        <td>${safe(item.provider)}</td>
+        <td>${safe(item.username)}</td>
+        <td>${safe(item.status)}</td>
+        <td>${item.credits_charged == null
+          ? "-"
+          : safe(item.credits_charged)}</td>
+      </tr>
+    `).join("") || '<tr><td colspan="6">Belum ada riwayat.</td></tr>';
+
+  document.getElementById("updated").textContent =
+    "Terakhir diperbarui: " + new Date().toLocaleString("id-ID");
+}
+
+async function logout() {
+  await client.auth.signOut();
+  showLogin();
+  message.textContent = "Kamu sudah logout.";
+}
+
+client.auth.onAuthStateChange((event, session) => {
+  if (event === "SIGNED_OUT") showLogin();
+});
+
+async function restoreSession() {
+  try {
+    const { data } = await client.auth.getSession();
+    if (data.session) await loadData();
+  } catch (error) {
+    showLogin();
+  }
+}
+
+restoreSession();
+</script>
+</body>
+</html>
