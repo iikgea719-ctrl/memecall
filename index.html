@@ -861,12 +861,15 @@ async function translateTweet(id) {
 }
 
 </script>
-
+  
 <script>
 let influencerPosts = new Map();
 let influencerOlderCursor = null;
 let influencerHasMore = true;
 let influencerLoadingOlder = false;
+
+let influencerScrollObserver = null;
+let influencerScrollSentinel = null;
 
 function influencerPostKey(post) {
     return String(post.post_id || post.id);
@@ -881,6 +884,31 @@ function sortInfluencerPosts() {
 
         return Number(b.id || 0) - Number(a.id || 0);
     });
+}
+
+function escapeInfluencerHTML(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
+}
+
+function updateInfluencerScrollStatus() {
+    if (!influencerScrollSentinel) return;
+
+    if (influencerLoadingOlder) {
+        influencerScrollSentinel.textContent =
+            "Memuat postingan lama...";
+    } else if (!influencerHasMore) {
+        influencerScrollSentinel.textContent =
+            "Semua arsip postingan sudah dimuat.";
+    } else {
+        influencerScrollSentinel.textContent =
+            "Gulir ke bawah untuk memuat postingan berikutnya...";
+    }
 }
 
 function renderInfluencerPosts() {
@@ -898,6 +926,8 @@ function renderInfluencerPosts() {
                 </div>
             </div>
         `;
+
+        updateInfluencerScrollStatus();
         return;
     }
 
@@ -955,6 +985,7 @@ function renderInfluencerPosts() {
                             safeProfileImage
                             ? `<img src="${safeProfileImage}"
                                 alt="${safeDisplayName}"
+                                loading="lazy"
                                 style="width:42px;height:42px;border-radius:50%;object-fit:cover;">`
                             : `<div style="width:42px;height:42px;border-radius:50%;background:#222;display:flex;align-items:center;justify-content:center;">👤</div>`
                         }
@@ -985,6 +1016,7 @@ function renderInfluencerPosts() {
 
                 <div class="feed-bottom">
                     <span>${safeDate}</span>
+
                     ${
                         safeUrl
                         ? `<a class="link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">View on X ↗</a>`
@@ -996,15 +1028,7 @@ function renderInfluencerPosts() {
         `;
     }).join("");
 
-    const loadMoreButton = document.getElementById("loadOlderInfluencers");
-
-    if (loadMoreButton) {
-        loadMoreButton.style.display = influencerHasMore ? "block" : "none";
-        loadMoreButton.disabled = influencerLoadingOlder;
-        loadMoreButton.textContent = influencerLoadingOlder
-            ? "Loading..."
-            : "Load Older Posts";
-    }
+    updateInfluencerScrollStatus();
 }
 
 async function loadInfluencerPosts() {
@@ -1025,11 +1049,12 @@ async function loadInfluencerPosts() {
             influencerPosts.set(influencerPostKey(post), post);
         });
 
-        // Cursor awal hanya diatur sekali.
-        // Refresh terbaru tidak mengubah posisi arsip lama.
+        // Cursor arsip lama hanya diatur saat pertama kali.
+        // Refresh terbaru tidak mengubah posisi pagination.
         if (influencerOlderCursor === null) {
             influencerOlderCursor = result.nextCursor;
-            influencerHasMore = result.hasMore === true;
+            influencerHasMore =
+                result.hasMore === true && !!result.nextCursor;
         }
 
         renderInfluencerPosts();
@@ -1059,7 +1084,9 @@ async function loadOlderInfluencerPosts() {
     }
 
     influencerLoadingOlder = true;
-    renderInfluencerPosts();
+    updateInfluencerScrollStatus();
+
+    const previousCursor = JSON.stringify(influencerOlderCursor);
 
     try {
         const params = new URLSearchParams({
@@ -1086,25 +1113,22 @@ async function loadOlderInfluencerPosts() {
         });
 
         influencerOlderCursor = result.nextCursor;
-        influencerHasMore = result.hasMore === true;
+
+        influencerHasMore =
+            result.hasMore === true &&
+            !!result.nextCursor &&
+            JSON.stringify(result.nextCursor) !== previousCursor;
 
     } catch (error) {
         console.error("Older influencer posts error:", error);
-        alert("Gagal memuat postingan lama. Silakan coba lagi.");
+
+        // Izinkan percobaan berikutnya ketika pengguna scroll lagi.
+        console.warn("Arsip lama akan dicoba kembali saat scroll berikutnya.");
     }
 
     influencerLoadingOlder = false;
-    renderInfluencerPosts();
-}
 
-function escapeInfluencerHTML(value) {
-    return String(value).replace(/[&<>"']/g, char => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-    })[char]);
+    renderInfluencerPosts();
 }
 
 async function translateInfluencerPost(index) {
@@ -1155,28 +1179,70 @@ async function translateInfluencerPost(index) {
     }
 }
 
-// Tombol untuk membuka arsip berikutnya
+// Area pemicu Infinite Scroll.
 const influencerContainer = document.getElementById("influencerFeed");
 
 if (influencerContainer) {
-    const button = document.createElement("button");
+    influencerScrollSentinel = document.createElement("div");
 
-    button.id = "loadOlderInfluencers";
-    button.textContent = "Load Older Posts";
-    button.className = "translate-btn";
-    button.style.width = "100%";
-    button.style.margin = "14px 0";
+    influencerScrollSentinel.id = "influencerScrollSentinel";
+    influencerScrollSentinel.style.width = "100%";
+    influencerScrollSentinel.style.padding = "20px 8px";
+    influencerScrollSentinel.style.textAlign = "center";
+    influencerScrollSentinel.style.color = "#777";
+    influencerScrollSentinel.style.fontSize = "11px";
 
-    button.addEventListener("click", loadOlderInfluencerPosts);
+    influencerContainer.after(influencerScrollSentinel);
 
-    influencerContainer.after(button);
+    updateInfluencerScrollStatus();
+
+    function isInfluencersTabActive() {
+        const activeTab = document.querySelector(".nav-item.active");
+
+        return activeTab?.dataset.filter === "influencers";
+    }
+
+    if ("IntersectionObserver" in window) {
+        influencerScrollObserver = new IntersectionObserver(entries => {
+            const visible = entries.some(entry => entry.isIntersecting);
+
+            if (
+                visible &&
+                isInfluencersTabActive() &&
+                !influencerLoadingOlder &&
+                influencerHasMore
+            ) {
+                loadOlderInfluencerPosts();
+            }
+        }, {
+            root: null,
+            rootMargin: "900px 0px",
+            threshold: 0
+        });
+
+        influencerScrollObserver.observe(influencerScrollSentinel);
+
+    } else {
+        // Cadangan untuk browser yang tidak mendukung IntersectionObserver.
+        window.addEventListener("scroll", () => {
+            if (!isInfluencersTabActive()) return;
+            if (influencerLoadingOlder || !influencerHasMore) return;
+
+            const position =
+                influencerScrollSentinel.getBoundingClientRect().top;
+
+            if (position < window.innerHeight + 900) {
+                loadOlderInfluencerPosts();
+            }
+        }, { passive: true });
+    }
 }
 
-// Muat postingan terbaru
+// Muat postingan terbaru.
 loadInfluencerPosts();
 
 // Refresh postingan terbaru setiap 5 menit.
-// Arsip lama tetap dipertahankan.
+// Postingan lama yang sudah dimuat tetap dipertahankan.
 let influencerRefreshTimeLeft = 300;
 
 const influencerCountdown = document.getElementById(
@@ -1204,6 +1270,8 @@ function updateInfluencerCountdown() {
 updateInfluencerCountdown();
 setInterval(updateInfluencerCountdown, 1000);
 </script>
+
+
 
 </body>
 </html>
