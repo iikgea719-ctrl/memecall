@@ -25,11 +25,54 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${supabaseKey}`
         };
 
-        // Ambil postingan Influencer yang tersimpan
-        const postsResponse = await fetch(
-            `${baseUrl}/rest/v1/influencer_posts?select=id,post_id,username,post_text,media,post_url,posted_at,saved_at&order=posted_at.desc&limit=100`,
-            { headers }
+        const limit = 100;
+
+        // Cursor untuk mengambil postingan yang lebih lama
+        const before = req.query?.before;
+        const beforeId = req.query?.beforeId;
+
+        const postsUrl = new URL(
+            `${baseUrl}/rest/v1/influencer_posts`
         );
+
+        postsUrl.searchParams.set(
+            "select",
+            "id,post_id,username,post_text,media,post_url,posted_at,saved_at"
+        );
+
+        postsUrl.searchParams.set(
+            "order",
+            "posted_at.desc,id.desc"
+        );
+
+        postsUrl.searchParams.set("limit", String(limit));
+
+        // Jika ada cursor, ambil postingan setelah posisi terakhir
+        if (before && beforeId) {
+            const timestamp = new Date(before);
+
+            if (
+                Number.isNaN(timestamp.getTime()) ||
+                !/^\d+$/.test(String(beforeId))
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Invalid pagination cursor"
+                });
+            }
+
+            const safeDate = timestamp.toISOString();
+
+            postsUrl.searchParams.set(
+                "or",
+                `(posted_at.lt.${safeDate},and(posted_at.eq.${safeDate},id.lt.${beforeId}))`
+            );
+        }
+
+        // Ambil arsip postingan
+        const postsResponse = await fetch(postsUrl, {
+            headers
+        });
 
         const posts = await postsResponse.json();
 
@@ -42,7 +85,7 @@ export default async function handler(req, res) {
             });
         }
 
-        // Ambil hanya akun Influencer yang masih aktif
+        // Ambil hanya akun yang masih aktif
         const accountsResponse = await fetch(
             `${baseUrl}/rest/v1/influencer_accounts?is_active=eq.true&select=username,display_name,profile_image_url`,
             { headers }
@@ -59,7 +102,6 @@ export default async function handler(req, res) {
             });
         }
 
-        // Buat daftar akun aktif
         const accountMap = new Map(
             accounts.map(account => [
                 String(account.username).toLowerCase(),
@@ -67,7 +109,7 @@ export default async function handler(req, res) {
             ])
         );
 
-        // Tampilkan hanya postingan dari akun yang masih aktif
+        // Gabungkan hanya postingan milik akun aktif
         const combinedPosts = posts
             .filter(post =>
                 accountMap.has(
@@ -81,16 +123,31 @@ export default async function handler(req, res) {
 
                 return {
                     ...post,
-                    display_name: account.display_name || post.username,
-                    profile_image_url: account.profile_image_url || null
+                    display_name:
+                        account.display_name || post.username,
+                    profile_image_url:
+                        account.profile_image_url || null
                 };
             });
+
+        // Cursor menggunakan baris terakhir dari data Supabase,
+        // termasuk jika postingan tersebut milik akun nonaktif.
+        const lastPost = posts.length > 0
+            ? posts[posts.length - 1]
+            : null;
 
         return res.status(200).json({
             success: true,
             source: "Supabase",
             total: combinedPosts.length,
-            posts: combinedPosts
+            posts: combinedPosts,
+            hasMore: posts.length === limit,
+            nextCursor: lastPost
+                ? {
+                    before: lastPost.posted_at,
+                    beforeId: lastPost.id
+                }
+                : null
         });
 
     } catch (error) {
