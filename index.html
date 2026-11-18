@@ -532,10 +532,8 @@ document.querySelectorAll(".feed-item").forEach(post => {
         post.style.display = "none";
     });
 
-    document.querySelectorAll(".feed-item").forEach(post => {
-    if (post.querySelector(".source").textContent === "INFLUENCER") {
-        post.style.display = "block";
-    }
+    document.querySelectorAll("#influencerFeed .feed-item").forEach(post => {
+    post.style.display = "block";
 });
 }
       
@@ -863,17 +861,158 @@ async function translateTweet(id) {
 }
 
 </script>
+
 <script>
-async function loadInfluencerPosts() {
+let influencerPosts = new Map();
+let influencerOlderCursor = null;
+let influencerHasMore = true;
+let influencerLoadingOlder = false;
+
+function influencerPostKey(post) {
+    return String(post.post_id || post.id);
+}
+
+function sortInfluencerPosts() {
+    return Array.from(influencerPosts.values()).sort((a, b) => {
+        const dateA = new Date(a.posted_at || 0).getTime();
+        const dateB = new Date(b.posted_at || 0).getTime();
+
+        if (dateB !== dateA) return dateB - dateA;
+
+        return Number(b.id || 0) - Number(a.id || 0);
+    });
+}
+
+function renderInfluencerPosts() {
     const container = document.getElementById("influencerFeed");
 
     if (!container) return;
 
+    const posts = sortInfluencerPosts();
+
+    if (posts.length === 0) {
+        container.innerHTML = `
+            <div class="feed-item">
+                <div class="feed-text">
+                    Belum ada postingan Influencer.
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = posts.map((post, index) => {
+        const username = String(post.username || "Unknown");
+        const displayName = String(post.display_name || username);
+        const profileImage = post.profile_image_url || "";
+        const text = String(post.post_text || "");
+        const url = String(post.post_url || "");
+
+        const date = post.posted_at
+            ? new Date(post.posted_at).toLocaleString("id-ID")
+            : "Waktu tidak tersedia";
+
+        const safeUsername = escapeInfluencerHTML(username);
+        const safeDisplayName = escapeInfluencerHTML(displayName);
+
+        const safeProfileImage = /^https?:\/\//i.test(profileImage)
+            ? escapeInfluencerHTML(profileImage)
+            : "";
+
+        const safeText = escapeInfluencerHTML(text);
+        const safeDate = escapeInfluencerHTML(date);
+
+        const safeUrl = /^https:\/\/(x\.com|twitter\.com)\//i.test(url)
+            ? escapeInfluencerHTML(url)
+            : "";
+
+        const mediaHTML = Array.isArray(post.media)
+            ? post.media.map(item => {
+                const mediaUrl = typeof item === "string"
+                    ? item
+                    : item?.url || item?.media_url || item?.image_url || "";
+
+                const safeMediaUrl = /^https?:\/\//i.test(mediaUrl)
+                    ? escapeInfluencerHTML(mediaUrl)
+                    : "";
+
+                return safeMediaUrl
+                    ? `<img src="${safeMediaUrl}"
+                        alt="Influencer post image"
+                        loading="lazy"
+                        style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:10px;">`
+                    : "";
+            }).join("")
+            : "";
+
+        return `
+            <div class="feed-item" data-influencer-post="true">
+
+                <div class="feed-top">
+                    <div style="display:flex;align-items:center;gap:10px;">
+
+                        ${
+                            safeProfileImage
+                            ? `<img src="${safeProfileImage}"
+                                alt="${safeDisplayName}"
+                                style="width:42px;height:42px;border-radius:50%;object-fit:cover;">`
+                            : `<div style="width:42px;height:42px;border-radius:50%;background:#222;display:flex;align-items:center;justify-content:center;">👤</div>`
+                        }
+
+                        <div>
+                            <span class="author">${safeDisplayName}</span>
+                            <span class="handle">@${safeUsername}</span>
+                        </div>
+
+                    </div>
+
+                    <span class="source">INFLUENCER</span>
+                </div>
+
+                <div class="feed-text"
+                    id="influencer-text-${index}"
+                    data-original="${safeText}">${safeText}</div>
+
+                <button class="translate-btn"
+                    id="influencer-translate-${index}"
+                    onclick="translateInfluencerPost(${index})">
+                    Translate 🇮🇩
+                </button>
+
+                ${mediaHTML}
+
+                <div class="tags">INFLUENCER · X</div>
+
+                <div class="feed-bottom">
+                    <span>${safeDate}</span>
+                    ${
+                        safeUrl
+                        ? `<a class="link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">View on X ↗</a>`
+                        : `<span>Source: X</span>`
+                    }
+                </div>
+
+            </div>
+        `;
+    }).join("");
+
+    const loadMoreButton = document.getElementById("loadOlderInfluencers");
+
+    if (loadMoreButton) {
+        loadMoreButton.style.display = influencerHasMore ? "block" : "none";
+        loadMoreButton.disabled = influencerLoadingOlder;
+        loadMoreButton.textContent = influencerLoadingOlder
+            ? "Loading..."
+            : "Load Older Posts";
+    }
+}
+
+async function loadInfluencerPosts() {
     try {
         const response = await fetch("/api/influencer-feed");
 
         if (!response.ok) {
-            throw new Error("Gagal mengambil data Influencer");
+            throw new Error("Gagal mengambil postingan terbaru");
         }
 
         const result = await response.json();
@@ -882,123 +1021,80 @@ async function loadInfluencerPosts() {
             throw new Error("Format data tidak valid");
         }
 
-        if (result.posts.length === 0) {
-            container.innerHTML = `
-                <div class="feed-item">
-                    <div class="feed-text">
-                        Belum ada postingan Influencer.
-                    </div>
-                </div>
-            `;
-            return;
+        result.posts.forEach(post => {
+            influencerPosts.set(influencerPostKey(post), post);
+        });
+
+        // Cursor awal hanya diatur sekali.
+        // Refresh terbaru tidak mengubah posisi arsip lama.
+        if (influencerOlderCursor === null) {
+            influencerOlderCursor = result.nextCursor;
+            influencerHasMore = result.hasMore === true;
         }
 
-        container.innerHTML = result.posts.map((post, index) => {
-            const username = String(post.username || "Unknown");
-const displayName = String(post.display_name || username);
-const profileImage = post.profile_image_url || "";
-const text = String(post.post_text || "");
-const url = String(post.post_url || "");
-            const date = post.posted_at
-                ? new Date(post.posted_at).toLocaleString("id-ID")
-                : "Waktu tidak tersedia";
-
-            const safeUsername = escapeInfluencerHTML(username);
-const safeDisplayName = escapeInfluencerHTML(displayName);
-const safeProfileImage = /^https?:\/\//i.test(profileImage)
-    ? escapeInfluencerHTML(profileImage)
-    : "";
-const safeText = escapeInfluencerHTML(text);
-const safeDate = escapeInfluencerHTML(date);
-
-            const safeUrl = /^https:\/\/(x\.com|twitter\.com)\//i.test(url)
-                ? url
-                : "";
-
-            return `
-                <div class="feed-item" data-influencer-post="true">
-
-                    <div class="feed-top">
-    <div style="display:flex;align-items:center;gap:10px;">
-
-        ${
-            safeProfileImage
-            ? `<img src="${safeProfileImage}"
-                alt="${safeDisplayName}"
-                style="width:42px;height:42px;border-radius:50%;object-fit:cover;">`
-            : `<div style="width:42px;height:42px;border-radius:50%;background:#222;display:flex;align-items:center;justify-content:center;">👤</div>`
-        }
-
-        <div>
-            <span class="author">${safeDisplayName}</span>
-            <span class="handle">@${safeUsername}</span>
-        </div>
-
-    </div>
-
-    <span class="source">INFLUENCER</span>
-</div>
-                   
-<div class="feed-text"
-     id="influencer-text-${index}"
-     data-original="${safeText}">
-    ${safeText}
-</div>
-
-<button class="translate-btn"
-        id="influencer-translate-${index}"
-        onclick="translateInfluencerPost(${index})">
-    Translate 🇮🇩
-</button>
-
-${
-    Array.isArray(post.media)
-    ? post.media.map(item => {
-        const mediaUrl = typeof item === "string"
-            ? item
-            : item?.url || item?.media_url || item?.image_url || "";
-
-        const safeMediaUrl = /^https?:\/\//i.test(mediaUrl)
-            ? escapeInfluencerHTML(mediaUrl)
-            : "";
-
-        return safeMediaUrl
-            ? `<img src="${safeMediaUrl}"
-                alt="Influencer post image"
-                loading="lazy"
-                style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:10px;">`
-            : "";
-    }).join("")
-    : ""
-}
-
-<div class="tags">INFLUENCER · X</div>
-
-
-                    <div class="feed-bottom">
-                        <span>${safeDate}</span>
-                        ${
-                            safeUrl
-                            ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">View on X ↗</a>`
-                            : `<span>Source: X</span>`
-                        }
-                    </div>
-
-                </div>
-            `;
-        }).join("");
+        renderInfluencerPosts();
 
     } catch (error) {
         console.error("Influencer feed error:", error);
 
-        container.innerHTML = `
-            <div class="feed-item">
-                <div class="feed-text">
-                    Gagal memuat Influencer posts. Silakan coba lagi.
+        if (influencerPosts.size === 0) {
+            document.getElementById("influencerFeed").innerHTML = `
+                <div class="feed-item">
+                    <div class="feed-text">
+                        Gagal memuat Influencer posts. Silakan coba lagi.
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        }
     }
+}
+
+async function loadOlderInfluencerPosts() {
+    if (
+        influencerLoadingOlder ||
+        !influencerHasMore ||
+        !influencerOlderCursor
+    ) {
+        return;
+    }
+
+    influencerLoadingOlder = true;
+    renderInfluencerPosts();
+
+    try {
+        const params = new URLSearchParams({
+            before: influencerOlderCursor.before,
+            beforeId: influencerOlderCursor.beforeId
+        });
+
+        const response = await fetch(
+            "/api/influencer-feed?" + params.toString()
+        );
+
+        if (!response.ok) {
+            throw new Error("Gagal mengambil arsip lama");
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !Array.isArray(result.posts)) {
+            throw new Error("Format data arsip tidak valid");
+        }
+
+        result.posts.forEach(post => {
+            influencerPosts.set(influencerPostKey(post), post);
+        });
+
+        influencerOlderCursor = result.nextCursor;
+        influencerHasMore = result.hasMore === true;
+
+    } catch (error) {
+        console.error("Older influencer posts error:", error);
+        alert("Gagal memuat postingan lama. Silakan coba lagi.");
+    }
+
+    influencerLoadingOlder = false;
+    renderInfluencerPosts();
 }
 
 function escapeInfluencerHTML(value) {
@@ -1010,7 +1106,8 @@ function escapeInfluencerHTML(value) {
         "'": "&#39;"
     })[char]);
 }
-  async function translateInfluencerPost(index) {
+
+async function translateInfluencerPost(index) {
     const textElement = document.getElementById(
         "influencer-text-" + index
     );
@@ -1058,30 +1155,48 @@ function escapeInfluencerHTML(value) {
     }
 }
 
+// Tombol untuk membuka arsip berikutnya
+const influencerContainer = document.getElementById("influencerFeed");
+
+if (influencerContainer) {
+    const button = document.createElement("button");
+
+    button.id = "loadOlderInfluencers";
+    button.textContent = "Load Older Posts";
+    button.className = "translate-btn";
+    button.style.width = "100%";
+    button.style.margin = "14px 0";
+
+    button.addEventListener("click", loadOlderInfluencerPosts);
+
+    influencerContainer.after(button);
+}
+
+// Muat postingan terbaru
 loadInfluencerPosts();
 
-// COUNTDOWN INFLUENCER: UPDATE SETIAP JAM
+// Refresh postingan terbaru setiap 5 menit.
+// Arsip lama tetap dipertahankan.
+let influencerRefreshTimeLeft = 300;
+
+const influencerCountdown = document.getElementById(
+    "influencerCountdown"
+);
+
 function updateInfluencerCountdown() {
-    const countdown = document.getElementById("influencerCountdown");
+    if (!influencerCountdown) return;
 
-    if (!countdown) return;
+    const minutes = Math.floor(influencerRefreshTimeLeft / 60);
+    const seconds = influencerRefreshTimeLeft % 60;
 
-    const now = new Date();
-    const nextHour = new Date(now);
-
-    nextHour.setHours(now.getHours() + 1);
-    nextHour.setMinutes(0, 0, 0);
-
-    const remaining = Math.max(0, nextHour - now);
-
-    const minutes = Math.floor(remaining / 60000);
-    const seconds = Math.floor((remaining % 60000) / 1000);
-
-    countdown.textContent =
+    influencerCountdown.textContent =
         String(minutes).padStart(2, "0") + ":" +
         String(seconds).padStart(2, "0");
 
-    if (remaining <= 1000) {
+    influencerRefreshTimeLeft--;
+
+    if (influencerRefreshTimeLeft < 0) {
+        influencerRefreshTimeLeft = 300;
         loadInfluencerPosts();
     }
 }
@@ -1089,5 +1204,6 @@ function updateInfluencerCountdown() {
 updateInfluencerCountdown();
 setInterval(updateInfluencerCountdown, 1000);
 </script>
+
 </body>
 </html>
