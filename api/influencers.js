@@ -587,7 +587,11 @@ export default async function handler(req, res) {
         let providerResult = null;
 
         for (const provider of providers) {
-            const providerName = provider.name.replace("try", "");
+            const providerName = {
+    tryTwex: "TwexAPI",
+    tryWeir: "Weir",
+    tryXFetch: "XFetch"
+}[provider.name];
 
             try {
                 providerResult = await provider(account);
