@@ -25,7 +25,7 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${supabaseKey}`
         };
 
-        // Ambil postingan Influencer
+        // Ambil postingan Influencer yang tersimpan
         const postsResponse = await fetch(
             `${baseUrl}/rest/v1/influencer_posts?select=id,post_id,username,post_text,media,post_url,posted_at,saved_at&order=posted_at.desc&limit=100`,
             { headers }
@@ -42,9 +42,9 @@ export default async function handler(req, res) {
             });
         }
 
-        // Ambil data akun dan foto profil
+        // Ambil hanya akun Influencer yang masih aktif
         const accountsResponse = await fetch(
-            `${baseUrl}/rest/v1/influencer_accounts?select=username,display_name,profile_image_url`,
+            `${baseUrl}/rest/v1/influencer_accounts?is_active=eq.true&select=username,display_name,profile_image_url`,
             { headers }
         );
 
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
             });
         }
 
-        // Gabungkan postingan dengan data profil
+        // Buat daftar akun aktif
         const accountMap = new Map(
             accounts.map(account => [
                 String(account.username).toLowerCase(),
@@ -67,17 +67,24 @@ export default async function handler(req, res) {
             ])
         );
 
-        const combinedPosts = posts.map(post => {
-            const account = accountMap.get(
-                String(post.username).toLowerCase()
-            );
+        // Tampilkan hanya postingan dari akun yang masih aktif
+        const combinedPosts = posts
+            .filter(post =>
+                accountMap.has(
+                    String(post.username).toLowerCase()
+                )
+            )
+            .map(post => {
+                const account = accountMap.get(
+                    String(post.username).toLowerCase()
+                );
 
-            return {
-                ...post,
-                display_name: account?.display_name || post.username,
-                profile_image_url: account?.profile_image_url || null
-            };
-        });
+                return {
+                    ...post,
+                    display_name: account.display_name || post.username,
+                    profile_image_url: account.profile_image_url || null
+                };
+            });
 
         return res.status(200).json({
             success: true,
