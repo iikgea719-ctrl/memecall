@@ -87,9 +87,17 @@ export default async function handler(req, res) {
             )
         ]);
 
-        if (!providerResponse.ok || !logsResponse.ok) {
-            throw new Error("Database query failed");
-        }
+        if (!providerResponse.ok) {
+    const detail = await providerResponse.text();
+    console.error("Provider query failed:", providerResponse.status, detail);
+    throw new Error("Provider database query failed");
+}
+
+if (!logsResponse.ok) {
+    const detail = await logsResponse.text();
+    console.error("Logs query failed:", logsResponse.status, detail);
+    throw new Error("Usage logs database query failed");
+}
 
         const [providers, logs] = await Promise.all([
             providerResponse.json(),
