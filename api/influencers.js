@@ -41,6 +41,141 @@ export default async function handler(req, res) {
 
     const providerErrors = [];
 
+    // ==========================================
+    // MONITORING API - INFLUENCERS
+    // ==========================================
+
+    const monitorEvents = [];
+
+    const providerRoles = {
+        TwexAPI: "primary",
+        Weir: "backup 1",
+        XFetch: "backup 2"
+    };
+
+    const providerRequestCounts = {
+        TwexAPI: 0,
+        Weir: 0,
+        XFetch: 0
+    };
+
+    function recordProvider(
+        provider,
+        status,
+        action,
+        error = null
+    ) {
+        monitorEvents.push({
+            module: "influencers",
+            provider,
+            role: providerRoles[provider],
+            status,
+            action,
+            requests_count: Math.max(
+                1,
+                providerRequestCounts[provider]
+            ),
+            error_message: error
+                ? String(error).slice(0, 2000)
+                : null,
+            created_at: new Date().toISOString()
+        });
+    }
+
+    async function flushMonitoring() {
+        if (!monitorEvents.length) {
+            return;
+        }
+
+        const headers = {
+            ...supabaseHeaders,
+            Prefer: "return=minimal"
+        };
+
+        const latestByProvider = new Map();
+
+        for (const event of monitorEvents) {
+            latestByProvider.set(event.provider, event);
+        }
+
+        const logs = monitorEvents.map(event => ({
+            module: event.module,
+            provider: event.provider,
+            action: event.action,
+            status: event.status,
+            requests_count: event.requests_count,
+            error_message: event.error_message,
+            created_at: event.created_at
+        }));
+
+        const providerUpdates = Array.from(
+            latestByProvider.values()
+        ).map(event => ({
+            module: "influencers",
+            provider: event.provider,
+            role: event.role,
+            status: event.status === "success"
+                ? "active"
+                : "error",
+            last_checked_at: event.created_at,
+            last_used_at: event.created_at,
+            last_error: event.error_message
+        }));
+
+        try {
+            const results = await Promise.all([
+                fetch(
+                    `${baseUrl}/rest/v1/api_usage_logs`,
+                    {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify(logs)
+                    }
+                ),
+
+                fetch(
+                    `${baseUrl}/rest/v1/api_provider_status?on_conflict=module,provider`,
+                    {
+                        method: "POST",
+                        headers: {
+                            ...headers,
+                            Prefer: "resolution=merge-duplicates,return=minimal"
+                        },
+                        body: JSON.stringify(providerUpdates)
+                    }
+                )
+            ]);
+
+            if (!results[0].ok) {
+                console.error(
+                    "Influencer monitoring logs failed:",
+                    await results[0].text()
+                );
+            }
+
+            if (!results[1].ok) {
+                console.error(
+                    "Influencer provider status failed:",
+                    await results[1].text()
+                );
+            }
+        } catch (error) {
+            console.error(
+                "Influencer monitoring error:",
+                error.message
+            );
+        }
+    }
+
+    async function sendJson(status, payload) {
+        await flushMonitoring();
+        return res.status(status).json(payload);
+    }
+
+    // ==========================================
+    // BACA RESPONS JSON PROVIDER
+    // ==========================================
+
     async function readJson(response) {
         const text = await response.text();
 
@@ -50,6 +185,10 @@ export default async function handler(req, res) {
             throw new Error("Provider returned invalid JSON");
         }
     }
+
+    // ==========================================
+    // NORMALISASI POSTINGAN
+    // ==========================================
 
     function normalizePosts(tweets, account) {
         return tweets
@@ -96,6 +235,10 @@ export default async function handler(req, res) {
             });
     }
 
+    // ==========================================
+    // UPDATE FOTO PROFIL
+    // ==========================================
+
     async function updateProfileImage(account, imageUrl) {
         if (!imageUrl || account.profile_image_url) {
             return {
@@ -140,6 +283,10 @@ export default async function handler(req, res) {
         }
     }
 
+    // ==========================================
+    // TWEXAPI - PROVIDER UTAMA
+    // ==========================================
+
     async function tryTwex(account) {
         const apiKey = providerKeys.TwexAPI;
 
@@ -150,9 +297,10 @@ export default async function handler(req, res) {
         let profileImage = null;
         let profileError = null;
 
-        // Ambil foto profil hanya jika belum tersedia.
         if (!account.profile_image_url) {
             try {
+                providerRequestCounts.TwexAPI++;
+
                 const profileResponse = await fetch(
                     "https://api.twexapi.io/twitter/users",
                     {
@@ -189,11 +337,12 @@ export default async function handler(req, res) {
                 profileError = error.message;
             }
 
-            // Jaga jeda request TwexAPI.
             await new Promise(resolve =>
                 setTimeout(resolve, 5500)
             );
         }
+
+        providerRequestCounts.TwexAPI++;
 
         const response = await fetch(
             `https://api.twexapi.io/twitter/${encodeURIComponent(account.username)}/timeline/page`,
@@ -227,6 +376,10 @@ export default async function handler(req, res) {
         };
     }
 
+    // ==========================================
+    // WEIR - BACKUP 1
+    // ==========================================
+
     async function tryWeir(account) {
         const apiKey = providerKeys.Weir;
 
@@ -242,10 +395,10 @@ export default async function handler(req, res) {
         let profileImage = null;
         let profileError = null;
 
-        // Foto profil hanya pelengkap.
-        // Kegagalan profile tidak menggagalkan timeline.
         if (!account.profile_image_url) {
             try {
+                providerRequestCounts.Weir++;
+
                 const profileResponse = await fetch(
                     `https://api.weirapp.io/v1/x/users/${encodeURIComponent(account.username)}`,
                     { headers }
@@ -267,6 +420,8 @@ export default async function handler(req, res) {
                 profileError = error.message;
             }
         }
+
+        providerRequestCounts.Weir++;
 
         const response = await fetch(
             `https://api.weirapp.io/v1/x/users/${encodeURIComponent(account.username)}/posts?limit=20`,
@@ -290,12 +445,18 @@ export default async function handler(req, res) {
         };
     }
 
+    // ==========================================
+    // XFETCH - BACKUP 2
+    // ==========================================
+
     async function tryXFetch(account) {
         const apiKey = providerKeys.XFetch;
 
         if (!apiKey) {
             throw new Error("XFETCH_API_KEY tidak tersedia");
         }
+
+        providerRequestCounts.XFetch++;
 
         const response = await fetch(
             `https://api.xfetch.io/v1/profiles/by-username/${encodeURIComponent(account.username)}`,
@@ -329,6 +490,10 @@ export default async function handler(req, res) {
         };
     }
 
+    // ==========================================
+    // PINDAHKAN AKUN KE BELAKANG ANTREAN
+    // ==========================================
+
     async function moveAccountToBack(account) {
         const response = await fetch(
             `${baseUrl}/rest/v1/influencer_accounts?id=eq.${account.id}`,
@@ -352,6 +517,10 @@ export default async function handler(req, res) {
         }
     }
 
+    // ==========================================
+    // PROSES UTAMA
+    // ==========================================
+
     try {
         // Ambil akun aktif yang paling lama belum diperiksa.
         const accountsResponse = await fetch(
@@ -362,7 +531,7 @@ export default async function handler(req, res) {
         const accounts = await readJson(accountsResponse);
 
         if (!accountsResponse.ok) {
-            return res.status(500).json({
+            return sendJson(500, {
                 success: false,
                 error: "Failed to load account queue",
                 details: accounts
@@ -370,7 +539,7 @@ export default async function handler(req, res) {
         }
 
         if (!Array.isArray(accounts) || accounts.length === 0) {
-            return res.status(200).json({
+            return sendJson(200, {
                 success: true,
                 message: "No active influencer accounts",
                 processed: 0
@@ -379,58 +548,85 @@ export default async function handler(req, res) {
 
         const account = accounts[0];
 
-        // Urutan provider: utama, backup 1, backup 2.
-        
-const testProvider = String(
-    req.query.testProvider || ""
-).toLowerCase();
+        // ======================================
+        // MODE TEST DAN URUTAN PROVIDER
+        // ======================================
 
-let providers;
+        const testProvider = String(
+            req.query.testProvider || ""
+        ).toLowerCase();
 
-if (testProvider === "weir") {
-    providers = [
-        tryWeir,
-        tryXFetch
-    ];
-} else if (testProvider === "xfetch") {
-    providers = [
-        tryXFetch
-    ];
-} else if (!testProvider) {
-    providers = [
-        tryTwex,
-        tryWeir,
-        tryXFetch
-    ];
-} else {
-    return res.status(400).json({
-        success: false,
-        error: "Invalid testProvider. Use weir or xfetch."
-    });
-}
+        let providers;
+
+        if (testProvider === "weir") {
+            providers = [
+                tryWeir,
+                tryXFetch
+            ];
+        } else if (testProvider === "xfetch") {
+            providers = [
+                tryXFetch
+            ];
+        } else if (!testProvider) {
+            providers = [
+                tryTwex,
+                tryWeir,
+                tryXFetch
+            ];
+        } else {
+            return sendJson(400, {
+                success: false,
+                error: "Invalid testProvider. Use weir or xfetch."
+            });
+        }
+
+        // ======================================
+        // COBA PROVIDER SECARA BERURUTAN
+        // ======================================
 
         let providerResult = null;
 
         for (const provider of providers) {
+            const providerName = provider.name.replace("try", "");
+
             try {
                 providerResult = await provider(account);
+
+                recordProvider(
+                    providerName,
+                    "success",
+                    testProvider
+                        ? `test_${testProvider}`
+                        : "timeline_fetch"
+                );
+
                 break;
+
             } catch (error) {
+                recordProvider(
+                    providerName,
+                    "failed",
+                    testProvider
+                        ? `test_${testProvider}`
+                        : "timeline_fetch",
+                    error.message
+                );
+
                 providerErrors.push({
-                    provider: provider.name
-                        .replace("try", ""),
+                    provider: providerName,
                     error: error.message
                 });
             }
         }
 
-        // Semua provider gagal.
-        // Geser akun agar akun lain tetap bisa diproses
-        // pada jadwal Cron berikutnya.
+        // ======================================
+        // SEMUA PROVIDER GAGAL
+        // ======================================
+
         if (!providerResult) {
             await moveAccountToBack(account);
 
-            return res.status(502).json({
+            return sendJson(502, {
                 success: false,
                 username: account.username,
                 error: "All influencer providers failed",
@@ -439,10 +635,18 @@ if (testProvider === "weir") {
             });
         }
 
+        // ======================================
+        // UPDATE FOTO PROFIL
+        // ======================================
+
         const profileResult = await updateProfileImage(
             account,
             providerResult.profileImage
         );
+
+        // ======================================
+        // NORMALISASI DAN SIMPAN POSTINGAN
+        // ======================================
 
         const posts = normalizePosts(
             providerResult.tweets,
@@ -451,8 +655,6 @@ if (testProvider === "weir") {
 
         let saved = 0;
 
-        // Simpan postingan baru saja.
-        // Postingan lama tidak dihapus atau ditimpa.
         if (posts.length > 0) {
             const saveResponse = await fetch(
                 `${baseUrl}/rest/v1/influencer_posts?on_conflict=post_id`,
@@ -469,7 +671,7 @@ if (testProvider === "weir") {
             const savedData = await readJson(saveResponse);
 
             if (!saveResponse.ok) {
-                return res.status(500).json({
+                return sendJson(500, {
                     success: false,
                     username: account.username,
                     provider: providerResult.provider,
@@ -483,13 +685,16 @@ if (testProvider === "weir") {
                 : 0;
         }
 
-        // Akun berhasil diproses, pindahkan ke belakang antrean.
+        // ======================================
+        // SELESAI - PINDAHKAN AKUN KE BELAKANG
+        // ======================================
+
         await moveAccountToBack(account);
 
-        return res.status(200).json({
+        return sendJson(200, {
             success: true,
-testMode: Boolean(testProvider),
-provider: providerResult.provider,
+            testMode: Boolean(testProvider),
+            provider: providerResult.provider,
             username: account.username,
             profileUpdated: profileResult.updated,
             profileError:
@@ -504,7 +709,7 @@ provider: providerResult.provider,
         });
 
     } catch (error) {
-        return res.status(500).json({
+        return sendJson(500, {
             success: false,
             error: "Internal server error",
             message: error.message
