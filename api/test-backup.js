@@ -1,5 +1,7 @@
 
 export default async function handler(req, res) {
+    res.setHeader("Cache-Control", "no-store");
+
     if (req.method !== "GET") {
         return res.status(405).json({
             success: false,
@@ -7,143 +9,106 @@ export default async function handler(req, res) {
         });
     }
 
-    const twitterKey = process.env.TWITTERAPIS_API_KEY;
-    const xdataKey = process.env.XDATAAPI_API_KEY;
-
-    const query = "memecoin";
-    const mode = req.query.mode || "normal";
-    const results = [];
-
-    async function testTwitterAPIs() {
-        if (mode === "simulate") {
-            throw new Error("SIMULATED FAILURE: TwitterAPIs sengaja dilewati");
-        }
-
-        if (!twitterKey) {
-            throw new Error("TWITTERAPIS_API_KEY belum dipasang");
-        }
-
-        const params = new URLSearchParams({
-            query,
-            product: "Latest",
-            compact: "1"
+    if (req.query.mode !== "admin-monitor") {
+        return res.status(404).json({
+            success: false,
+            error: "Not found"
         });
+    }
 
-        const response = await fetch(
-            "https://api.twitterapis.com/twitter/tweet/advanced_search?" +
-            params.toString(),
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const anonKey = process.env.SUPABASE_ANON_KEY;
+    const secretKey = process.env.SUPABASE_SECRET_KEY;
+    const adminUserId = process.env.ADMIN_USER_ID;
+
+    if (!supabaseUrl || !anonKey || !secretKey || !adminUserId) {
+        return res.status(500).json({
+            success: false,
+            error: "Server configuration incomplete"
+        });
+    }
+
+    const authHeader = req.headers.authorization || "";
+    const accessToken = authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : "";
+
+    if (!accessToken) {
+        return res.status(401).json({
+            success: false,
+            error: "Login required"
+        });
+    }
+
+    try {
+        const baseUrl = supabaseUrl.replace(/\/$/, "");
+
+        // Verifikasi token melalui Supabase Auth
+        const authResponse = await fetch(
+            `${baseUrl}/auth/v1/user`,
             {
                 headers: {
-                    Authorization: `Bearer ${twitterKey}`,
-                    Accept: "application/json"
+                    apikey: anonKey,
+                    Authorization: `Bearer ${accessToken}`
                 }
             }
         );
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.message || `HTTP ${response.status}`
-            );
+        if (!authResponse.ok) {
+            return res.status(401).json({
+                success: false,
+                error: "Invalid or expired session"
+            });
         }
 
-        const tweets = data.tweets || [];
+        const user = await authResponse.json();
 
-        if (!tweets.length) {
-            throw new Error("TwitterAPIs tidak menemukan postingan");
+        // Hanya User ID admin yang diizinkan
+        if (user.id !== adminUserId) {
+            return res.status(403).json({
+                success: false,
+                error: "Admin access only"
+            });
         }
 
-        return tweets.slice(0, 3).map(tweet => ({
-            id: tweet.id,
-            text: tweet.text || "",
-            created_at: tweet.created_at || ""
-        }));
-    }
+        const dbHeaders = {
+            apikey: secretKey,
+            Authorization: `Bearer ${secretKey}`
+        };
 
-    async function testXDataAPI() {
-        if (!xdataKey) {
-            throw new Error("XDATAAPI_API_KEY belum dipasang");
+        const [providerResponse, logsResponse] = await Promise.all([
+            fetch(
+                `${baseUrl}/rest/v1/api_provider_status?select=*&order=module.asc,provider.asc`,
+                { headers: dbHeaders }
+            ),
+            fetch(
+                `${baseUrl}/rest/v1/api_usage_logs?select=*&order=created_at.desc&limit=100`,
+                { headers: dbHeaders }
+            )
+        ]);
+
+        if (!providerResponse.ok || !logsResponse.ok) {
+            throw new Error("Database query failed");
         }
 
-        const params = new URLSearchParams({
-            q: query,
-            product: "Latest",
-            count: "3"
+        const [providers, logs] = await Promise.all([
+            providerResponse.json(),
+            logsResponse.json()
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            admin: true,
+            providers,
+            logs
         });
 
-        const response = await fetch(
-            "https://api.xdataapi.io/v1/tweets/search?" +
-            params.toString(),
-            {
-                headers: {
-                    "x-api-key": xdataKey,
-                    Accept: "application/json"
-                }
-            }
-        );
+    } catch (error) {
+        console.error("Admin monitor error:", error);
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.message || `HTTP ${response.status}`
-            );
-        }
-
-        if (!Array.isArray(data.data) || !data.data.length) {
-            throw new Error("XDataAPI tidak menemukan postingan");
-        }
-
-        return data.data.slice(0, 3).map(tweet => ({
-            id: tweet.id,
-            text: tweet.text || "",
-            created_at: tweet.created_at || ""
-        }));
+        return res.status(500).json({
+            success: false,
+            error: "Internal server error"
+        });
     }
-
-    const providers = [
-        {
-            name: "TwitterAPIs",
-            run: testTwitterAPIs
-        },
-        {
-            name: "XDataAPI",
-            run: testXDataAPI
-        }
-    ];
-
-    for (const provider of providers) {
-        try {
-            const tweets = await provider.run();
-
-            results.push({
-                provider: provider.name,
-                status: "SUCCESS",
-                total: tweets.length
-            });
-
-            return res.status(200).json({
-                success: true,
-                mode,
-                activeSource: provider.name,
-                testedProviders: results,
-                tweets
-            });
-
-        } catch (error) {
-            results.push({
-                provider: provider.name,
-                status: "FAILED",
-                error: error.message
-            });
-        }
-    }
-
-    return res.status(200).json({
-        success: false,
-        mode,
-        activeSource: null,
-        testedProviders: results
-    });
 }
