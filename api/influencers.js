@@ -40,11 +40,6 @@ export default async function handler(req, res) {
     };
 
     const providerErrors = [];
-
-    // ==========================================
-    // MONITORING API - INFLUENCERS
-    // ==========================================
-
     const monitorEvents = [];
 
     const providerRoles = {
@@ -59,10 +54,15 @@ export default async function handler(req, res) {
         XFetch: 0
     };
 
+    // ==========================================
+    // MONITORING API
+    // ==========================================
+
     function recordProvider(
         provider,
         status,
         action,
+        username,
         error = null
     ) {
         monitorEvents.push({
@@ -71,10 +71,9 @@ export default async function handler(req, res) {
             role: providerRoles[provider],
             status,
             action,
-            requests_count: Math.max(
-                1,
-                providerRequestCounts[provider]
-            ),
+            username: username || null,
+            requests_count:
+                providerRequestCounts[provider] || 0,
             error_message: error
                 ? String(error).slice(0, 2000)
                 : null,
@@ -83,9 +82,7 @@ export default async function handler(req, res) {
     }
 
     async function flushMonitoring() {
-        if (!monitorEvents.length) {
-            return;
-        }
+        if (!monitorEvents.length) return;
 
         const headers = {
             ...supabaseHeaders,
@@ -101,6 +98,7 @@ export default async function handler(req, res) {
         const logs = monitorEvents.map(event => ({
             module: event.module,
             provider: event.provider,
+            username: event.username,
             action: event.action,
             status: event.status,
             requests_count: event.requests_count,
@@ -173,7 +171,7 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
-    // BACA RESPONS JSON PROVIDER
+    // JSON PROVIDER
     // ==========================================
 
     async function readJson(response) {
@@ -522,7 +520,6 @@ export default async function handler(req, res) {
     // ==========================================
 
     try {
-        // Ambil akun aktif yang paling lama belum diperiksa.
         const accountsResponse = await fetch(
             `${baseUrl}/rest/v1/influencer_accounts?is_active=eq.true&select=id,username,profile_image_url&order=last_checked_at.asc.nullsfirst&limit=1`,
             { headers: supabaseHeaders }
@@ -588,10 +585,10 @@ export default async function handler(req, res) {
 
         for (const provider of providers) {
             const providerName = {
-    tryTwex: "TwexAPI",
-    tryWeir: "Weir",
-    tryXFetch: "XFetch"
-}[provider.name];
+                tryTwex: "TwexAPI",
+                tryWeir: "Weir",
+                tryXFetch: "XFetch"
+            }[provider.name];
 
             try {
                 providerResult = await provider(account);
@@ -601,7 +598,8 @@ export default async function handler(req, res) {
                     "success",
                     testProvider
                         ? `test_${testProvider}`
-                        : "timeline_fetch"
+                        : "timeline_fetch",
+                    account.username
                 );
 
                 break;
@@ -613,6 +611,7 @@ export default async function handler(req, res) {
                     testProvider
                         ? `test_${testProvider}`
                         : "timeline_fetch",
+                    account.username,
                     error.message
                 );
 
@@ -690,7 +689,7 @@ export default async function handler(req, res) {
         }
 
         // ======================================
-        // SELESAI - PINDAHKAN AKUN KE BELAKANG
+        // SELESAI
         // ======================================
 
         await moveAccountToBack(account);
