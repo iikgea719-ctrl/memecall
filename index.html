@@ -956,15 +956,62 @@ function renderInfluencerPosts() {
             ? escapeInfluencerHTML(url)
             : "";
 
-        const mediaHTML = Array.isArray(post.media)
-            ? post.media.map(item => {
-                const mediaUrl = typeof item === "string"
-                    ? item
-                    : item?.url || item?.media_url || item?.image_url || "";
+        
+const mediaHTML = Array.isArray(post.media)
+    ? post.media.map(item => {
+        const mediaUrl = typeof item === "string"
+            ? item
+            : item?.url ||
+              item?.media_url ||
+              item?.media_url_https ||
+              item?.image_url ||
+              "";
 
-                const safeMediaUrl = /^https?:\/\//i.test(mediaUrl)
-                    ? escapeInfluencerHTML(mediaUrl)
-                    : "";
+        const mediaType = typeof item === "object"
+            ? String(item?.type || item?.media_type || "photo").toLowerCase()
+            : "photo";
+
+        const previewUrl = typeof item === "object"
+            ? item?.previewImageUrl ||
+              item?.preview_image_url ||
+              item?.preview_image?.url ||
+              ""
+            : "";
+
+        const safeMediaUrl = /^https?:\/\//i.test(mediaUrl)
+            ? escapeInfluencerHTML(mediaUrl)
+            : "";
+
+        const safePreviewUrl = /^https?:\/\//i.test(previewUrl)
+            ? escapeInfluencerHTML(previewUrl)
+            : "";
+
+        if (!safeMediaUrl) return "";
+
+        if (mediaType === "video" || mediaType === "animated_gif") {
+            return `
+                <video
+                    controls
+                    playsinline
+                    preload="metadata"
+                    ${safePreviewUrl ? `poster="${safePreviewUrl}"` : ""}
+                    style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:10px;background:#111;">
+                    <source src="${safeMediaUrl}" type="video/mp4">
+                    Browser kamu tidak mendukung pemutaran video.
+                </video>
+            `;
+        }
+
+        return `
+            <img
+                src="${safeMediaUrl}"
+                alt="Influencer post image"
+                loading="lazy"
+                style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:10px;">
+        `;
+    }).join("")
+    : "";
+
 
                 return safeMediaUrl
                     ? `<img src="${safeMediaUrl}"
