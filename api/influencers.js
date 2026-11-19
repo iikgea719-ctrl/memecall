@@ -264,24 +264,32 @@ function normalizePosts(tweets, account) {
             }
 
             const mediaUrl =
-                item.media_url_https ||
-                item.media_url ||
-                item.image_url ||
-                item.imageUrl ||
-                item.url ||
-                item.preview_image_url ||
-                item.preview_image?.url ||
-                null;
+    item.media_url_https ||
+    item.media_url ||
+    item.image_url ||
+    item.imageUrl ||
+    item.url ||
+    item.previewImageUrl ||
+    item.preview_image_url ||
+    item.preview_image?.url ||
+    null;
 
             if (!mediaUrl) return null;
 
-            return {
-                url: mediaUrl,
-                type:
-                    item.type ||
-                    item.media_type ||
-                    "photo"
-            };
+            
+return {
+    url: mediaUrl,
+    type:
+        item.type ||
+        item.media_type ||
+        "photo",
+    previewImageUrl:
+        item.previewImageUrl ||
+        item.preview_image_url ||
+        item.preview_image?.url ||
+        null
+};
+
         }).filter(item => item && item.url);
     }
 
