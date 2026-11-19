@@ -909,8 +909,23 @@ function updateInfluencerScrollStatus() {
     if (!influencerScrollSentinel) return;
 
     if (influencerLoadingOlder) {
-        influencerScrollSentinel.textContent =
-            "Memuat postingan lama...";
+        influencerScrollSentinel.innerHTML = `
+            <div style="
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                padding:8px;
+            ">
+                <div style="
+                    width:24px;
+                    height:24px;
+                    border:3px solid #333;
+                    border-top:3px solid #a855f7;
+                    border-radius:50%;
+                    animation: influencerSpin 0.8s linear infinite;
+                "></div>
+            </div>
+        `;
     } else if (!influencerHasMore) {
         influencerScrollSentinel.textContent =
             "Semua arsip postingan sudah dimuat.";
@@ -919,7 +934,7 @@ function updateInfluencerScrollStatus() {
             "Gulir ke bawah untuk memuat postingan berikutnya...";
     }
 }
-
+  
 function renderInfluencerPosts() {
     const container = document.getElementById("influencerFeed");
 
