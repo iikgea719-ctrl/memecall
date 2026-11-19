@@ -1228,18 +1228,11 @@ async function translateInfluencerPost(index) {
 // Area pemicu Infinite Scroll.
 const influencerContainer = document.getElementById("influencerFeed");
 
-if (influencerContainer) {
-    influencerScrollSentinel = document.createElement("div");
+influencerScrollSentinel = document.getElementById(
+    "influencerScrollSentinel"
+);
 
-    influencerScrollSentinel.id = "influencerScrollSentinel";
-    influencerScrollSentinel.style.width = "100%";
-    influencerScrollSentinel.style.padding = "20px 8px";
-    influencerScrollSentinel.style.textAlign = "center";
-    influencerScrollSentinel.style.color = "#777";
-    influencerScrollSentinel.style.fontSize = "11px";
-
-    influencerContainer.after(influencerScrollSentinel);
-
+if (influencerContainer && influencerScrollSentinel) {
     updateInfluencerScrollStatus();
 
     
