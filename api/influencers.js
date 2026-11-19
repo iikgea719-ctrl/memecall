@@ -802,42 +802,100 @@ if (!providerResult) {
         // NORMALISASI DAN SIMPAN POSTINGAN
         // ======================================
 
-        const posts = normalizePosts(
-            providerResult.tweets,
-            account
+        
+if (posts.length > 0) {
+    // Ambil media yang sudah tersimpan agar arsip lama tetap aman.
+    const postIds = posts.map(post => post.post_id);
+
+    const existingUrl = new URL(
+        `${baseUrl}/rest/v1/influencer_posts`
+    );
+
+    existingUrl.searchParams.set(
+        "post_id",
+        `in.(${postIds.join(",")})`
+    );
+
+    existingUrl.searchParams.set(
+        "select",
+        "post_id,media"
+    );
+
+    const existingResponse = await fetch(
+        existingUrl.toString(),
+        { headers: supabaseHeaders }
+    );
+
+    const existingData = await readJson(existingResponse);
+
+    if (!existingResponse.ok) {
+        return sendJson(500, {
+            success: false,
+            username: account.username,
+            error: "Failed to check existing post media",
+            details: existingData
+        });
+    }
+
+    const existingMediaMap = new Map(
+        existingData.map(post => [
+            String(post.post_id),
+            post.media
+        ])
+    );
+
+    // Pertahankan gambar lama jika provider kali ini tidak mengirim media.
+    const safePosts = posts.map(post => {
+        const newMedia = Array.isArray(post.media)
+            ? post.media
+            : [];
+
+        const oldMedia = existingMediaMap.get(
+            String(post.post_id)
         );
 
-        let saved = 0;
+        return {
+            ...post,
+            media: newMedia.length > 0
+                ? newMedia
+                : (
+                    Array.isArray(oldMedia)
+                        ? oldMedia
+                        : []
+                )
+        };
+    });
 
-        if (posts.length > 0) {
-            const saveResponse = await fetch(
-                `${baseUrl}/rest/v1/influencer_posts?on_conflict=post_id`,
-                {
-                    method: "POST",
-                    headers: {
-                        ...supabaseHeaders,
-                        Prefer: "resolution=ignore-duplicates,return=representation"
-                    },
-                    body: JSON.stringify(posts)
-                }
-            );
-
-            const savedData = await readJson(saveResponse);
-
-            if (!saveResponse.ok) {
-                return sendJson(500, {
-                    success: false,
-                    username: account.username,
-                    provider: providerResult.provider,
-                    error: "Failed to save posts",
-                    details: savedData
-                });
-            }
-
-            saved = Array.isArray(savedData)
-                ? savedData.length
-                : 0;
+    // Upsert: postingan baru masuk, postingan lama dapat diperbarui.
+    const saveResponse = await fetch(
+        `${baseUrl}/rest/v1/influencer_posts?on_conflict=post_id`,
+        {
+            method: "POST",
+            headers: {
+                ...supabaseHeaders,
+                Prefer: "resolution=merge-duplicates,return=representation"
+            },
+            body: JSON.stringify(safePosts)
         }
+    );
+
+    const savedData = await readJson(saveResponse);
+
+    if (!saveResponse.ok) {
+        return sendJson(500, {
+            success: false,
+            username: account.username,
+            provider: providerResult.provider,
+            error: "Failed to save posts",
+            details: savedData
+        });
+    }
+
+    saved = Array.isArray(savedData)
+        ? savedData.length
+        : 0;
+}
+
 
         // ======================================
         // SELESAI
