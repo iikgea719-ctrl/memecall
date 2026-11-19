@@ -9,6 +9,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.SOCIALDATA_API_KEY;
     const backupApiKey = process.env.TWITTERAPIS_API_KEY;
     const xdataApiKey = process.env.XDATAAPI_API_KEY;
+    const getxApiKey = process.env.GETXAPI_API_KEY;
 
     const query = req.query.q ||
         '(memecoin OR "meme coin" OR pump.fun OR solana OR degen)';
@@ -22,13 +23,15 @@ export default async function handler(req, res) {
     const providerRoles = {
         SocialData: "primary",
         TwitterAPIs: "backup 1",
-        XDataAPI: "backup 2"
+        XDataAPI: "backup 2",
+        GetXAPI: "backup 3"
     };
 
     const providerRequestCounts = {
         SocialData: 0,
         TwitterAPIs: 0,
-        XDataAPI: 0
+        XDataAPI: 0,
+        GetXAPI: 0
     };
 
     function addMonitorEvent(provider, status, action, error = null) {
@@ -391,6 +394,106 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
+    // GETXAPI - BACKUP 3
+    // ==========================================
+
+    function mapGetXAPITweet(tweet) {
+        const author = tweet.author || {};
+
+        const media = Array.isArray(tweet.media)
+            ? tweet.media
+            : [];
+
+        return {
+            id: String(tweet.id || ""),
+            full_text: tweet.text || "",
+            created_at: tweet.createdAt || "",
+
+            user: {
+                name: author.name || "X User",
+                username: author.userName || "",
+                profile_image_url:
+                    author.profilePicture || ""
+            },
+
+            entities: media.map(item => {
+                const mediaUrl = typeof item === "string"
+                    ? item
+                    : (
+                        item.url ||
+                        item.media_url ||
+                        item.media_url_https ||
+                        item.image_url ||
+                        item.preview_image_url ||
+                        ""
+                    );
+
+                return {
+                    type: typeof item === "object"
+                        ? (item.type || "photo")
+                        : "photo",
+                    link: mediaUrl,
+                    preview: mediaUrl
+                };
+            }).filter(item => item.link)
+        };
+    }
+
+    async function fetchGetXAPI() {
+        if (!getxApiKey) {
+            throw new Error("GETXAPI_API_KEY belum dipasang");
+        }
+
+        const params = new URLSearchParams({
+            q: query,
+            product: "Latest"
+        });
+
+        // Satu request saja untuk menghemat kredit.
+        providerRequestCounts.GetXAPI++;
+
+        const response = await fetch(
+            "https://api.getxapi.com/twitter/tweet/advanced_search?" +
+            params.toString(),
+            {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${getxApiKey}`,
+                    "Accept": "application/json"
+                }
+            }
+        );
+
+        const responseText = await response.text();
+
+        let data;
+
+        try {
+            data = JSON.parse(responseText);
+        } catch {
+            throw new Error(
+                `GetXAPI memberikan respons bukan JSON: HTTP ${response.status}`
+            );
+        }
+
+        if (!response.ok) {
+            throw new Error(
+                data.message ||
+                data.error ||
+                `GetXAPI gagal: HTTP ${response.status}`
+            );
+        }
+
+        if (!Array.isArray(data.tweets)) {
+            throw new Error(
+                "Format respons GetXAPI tidak dikenali"
+            );
+        }
+
+        return data.tweets.map(mapGetXAPITweet);
+    }
+
+    // ==========================================
     // SUPABASE - PENYIMPANAN ARSIP
     // ==========================================
 
@@ -515,13 +618,14 @@ export default async function handler(req, res) {
             {
                 name: "XDataAPI",
                 fetch: fetchXDataAPI
+            },
+            {
+                name: "GetXAPI",
+                fetch: fetchGetXAPI
             }
         ];
 
         for (const provider of providers) {
-            const beforeCount =
-                providerRequestCounts[provider.name];
-
             try {
                 console.log("Trying backup:", provider.name);
 
@@ -593,10 +697,9 @@ export default async function handler(req, res) {
         return sendResponse(200, {
             success: true,
             activeSources: [result.provider],
-            backupSources:
-                result.provider === "TwitterAPIs"
-                    ? ["SocialData", "XDataAPI"]
-                    : ["SocialData", "TwitterAPIs"],
+            backupSources: Object.keys(providerRoles).filter(
+                name => name !== result.provider
+            ),
             total: result.tweets.length,
             archiveSaved: result.archiveSaved,
             tweets: result.tweets
@@ -663,7 +766,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // Semua request SocialData berhasil.
         let tweets = rawTweets.map(tweet => {
             const media = [
                 ...(tweet.extended_entities?.media || []),
@@ -722,7 +824,11 @@ export default async function handler(req, res) {
             return sendResponse(200, {
                 success: true,
                 activeSources: ["SocialData"],
-                backupSources: ["TwitterAPIs", "XDataAPI"],
+                backupSources: [
+                    "TwitterAPIs",
+                    "XDataAPI",
+                    "GetXAPI"
+                ],
                 total: result.tweets.length,
                 archiveSaved: result.archiveSaved,
                 tweets: result.tweets
@@ -741,7 +847,10 @@ export default async function handler(req, res) {
         );
 
     } catch (error) {
-        if (!socialDataRecorded && providerRequestCounts.SocialData > 0) {
+        if (
+            !socialDataRecorded &&
+            providerRequestCounts.SocialData > 0
+        ) {
             addMonitorEvent(
                 "SocialData",
                 "failed",
@@ -769,7 +878,8 @@ export default async function handler(req, res) {
             backupSources: [
                 "SocialData",
                 "TwitterAPIs",
-                "XDataAPI"
+                "XDataAPI",
+                "GetXAPI"
             ],
             total: archive.tweets.length,
             archiveSaved: archive.archiveSaved,
