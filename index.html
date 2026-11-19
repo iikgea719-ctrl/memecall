@@ -1233,47 +1233,62 @@ if (influencerContainer) {
 
     updateInfluencerScrollStatus();
 
-    function isInfluencersTabActive() {
-        const activeTab = document.querySelector(".nav-item.active");
+    
+function isInfluencersTabActive() {
+    const activeTab = document.querySelector(".nav-item.active");
 
-        return activeTab?.dataset.filter === "influencers";
-    }
+    return activeTab?.dataset.filter === "influencers";
+}
 
-    if ("IntersectionObserver" in window) {
-        influencerScrollObserver = new IntersectionObserver(entries => {
-            const visible = entries.some(entry => entry.isIntersecting);
+function tryLoadOlderInfluencerPosts() {
+    if (!isInfluencersTabActive()) return;
+    if (influencerLoadingOlder || !influencerHasMore) return;
+    if (!influencerScrollSentinel) return;
 
-            if (
-                visible &&
-                isInfluencersTabActive() &&
-                !influencerLoadingOlder &&
-                influencerHasMore
-            ) {
-                loadOlderInfluencerPosts();
-            }
-        }, {
-            root: null,
-            rootMargin: "900px 0px",
-            threshold: 0
-        });
+    const position =
+        influencerScrollSentinel.getBoundingClientRect().top;
 
-        influencerScrollObserver.observe(influencerScrollSentinel);
-
-    } else {
-        // Cadangan untuk browser yang tidak mendukung IntersectionObserver.
-        window.addEventListener("scroll", () => {
-            if (!isInfluencersTabActive()) return;
-            if (influencerLoadingOlder || !influencerHasMore) return;
-
-            const position =
-                influencerScrollSentinel.getBoundingClientRect().top;
-
-            if (position < window.innerHeight + 900) {
-                loadOlderInfluencerPosts();
-            }
-        }, { passive: true });
+    if (position < window.innerHeight + 900) {
+        loadOlderInfluencerPosts();
     }
 }
+
+// Tetap gunakan IntersectionObserver.
+if ("IntersectionObserver" in window) {
+    influencerScrollObserver = new IntersectionObserver(entries => {
+        const visible = entries.some(entry => entry.isIntersecting);
+
+        if (visible) {
+            tryLoadOlderInfluencerPosts();
+        }
+    }, {
+        root: null,
+        rootMargin: "900px 0px",
+        threshold: 0
+    });
+
+    influencerScrollObserver.observe(influencerScrollSentinel);
+}
+
+// Tambahkan pemicu scroll sebagai pengaman.
+window.addEventListener(
+    "scroll",
+    tryLoadOlderInfluencerPosts,
+    { passive: true }
+);
+
+// Periksa kembali ketika ukuran layar berubah.
+window.addEventListener(
+    "resize",
+    tryLoadOlderInfluencerPosts,
+    { passive: true }
+);
+
+// Periksa kembali ketika tab Influencers dibuka.
+document.querySelector('[data-filter="influencers"]')
+    ?.addEventListener("click", () => {
+        requestAnimationFrame(tryLoadOlderInfluencerPosts);
+    });
 
 // Muat postingan terbaru.
 loadInfluencerPosts();
