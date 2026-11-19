@@ -1011,17 +1011,7 @@ const mediaHTML = Array.isArray(post.media)
         `;
     }).join("")
     : "";
-
-
-                return safeMediaUrl
-                    ? `<img src="${safeMediaUrl}"
-                        alt="Influencer post image"
-                        loading="lazy"
-                        style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-top:10px;">`
-                    : "";
-            }).join("")
-            : "";
-
+             
         return `
             <div class="feed-item" data-influencer-post="true">
 
