@@ -16,6 +16,7 @@ h1{font-size:25px;margin-bottom:5px}
 input{width:100%;padding:13px;margin:8px 0;background:#080e19;border:1px solid #344158;border-radius:8px;color:white}
 button{padding:12px 16px;border:0;border-radius:8px;background:#4778ef;color:white;font-weight:bold;cursor:pointer}
 button.secondary{background:#263247}
+button.test{background:#7c3aed}
 button:disabled{opacity:.5}
 .hidden{display:none!important}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
@@ -25,7 +26,8 @@ table{width:100%;border-collapse:collapse;font-size:13px;min-width:550px}
 th,td{text-align:left;padding:11px;border-bottom:1px solid #293449}
 .table-wrap{overflow-x:auto}
 .good{color:#55d69a}.bad{color:#ff7373}.unknown{color:#f2c66d}
-#message{white-space:pre-wrap;color:#f2c66d;font-size:13px}
+#message,#testMessage{white-space:pre-wrap;color:#f2c66d;font-size:13px}
+#testMessage{margin-top:14px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -61,6 +63,19 @@ th,td{text-align:left;padding:11px;border-bottom:1px solid #293449}
       <button onclick="loadData()">Refresh Data</button>
       <button class="secondary" onclick="logout()">Logout</button>
       <p id="updated" class="muted"></p>
+    </div>
+
+    <div class="panel">
+      <h3>Pengujian API</h3>
+      <p class="muted">
+        Tes langsung GetXAPI sebagai Backup 3 Latest X Discussions.
+        Pengujian menggunakan satu request.
+      </p>
+      <br>
+      <button id="testGetXButton" class="test" onclick="testGetXAPI()">
+        Tes GetXAPI
+      </button>
+      <p id="testMessage"></p>
     </div>
 
     <div class="panel">
@@ -237,6 +252,64 @@ async function loadData() {
 
   document.getElementById("updated").textContent =
     "Terakhir diperbarui: " + new Date().toLocaleString("id-ID");
+}
+
+// ==========================================
+// TES MANUAL GETXAPI
+// ==========================================
+
+async function testGetXAPI() {
+  const button = document.getElementById("testGetXButton");
+  const output = document.getElementById("testMessage");
+
+  button.disabled = true;
+  output.textContent = "Sedang menguji GetXAPI...";
+
+  try {
+    const { data, error } = await client.auth.getSession();
+
+    if (error || !data.session) {
+      throw new Error("Sesi admin tidak ditemukan. Silakan login kembali.");
+    }
+
+    const response = await fetch(
+      "/api/test-backup?mode=admin-test-getxapi",
+      {
+        method: "GET",
+        headers: {
+          Authorization: "Bearer " + data.session.access_token
+        },
+        cache: "no-store"
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.error || "Pengujian GetXAPI gagal."
+      );
+    }
+
+    output.textContent =
+      "BERHASIL: GetXAPI merespons.\n" +
+      "Provider: " + result.provider + "\n" +
+      "Peran: " + result.role + "\n" +
+      "Postingan diterima: " + result.tweetCount + "\n" +
+      "Request digunakan: " + result.requestsUsed + "\n" +
+      "Monitor tersimpan: " +
+      (result.monitorSaved ? "Ya" : "Tidak");
+
+    output.style.color = "#55d69a";
+
+    await loadData();
+
+  } catch (error) {
+    output.textContent = "GAGAL: " + error.message;
+    output.style.color = "#ff7373";
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function logout() {
