@@ -229,51 +229,103 @@ function providerError(response, result, label) {
     // ==========================================
     // NORMALISASI POSTINGAN
     // ==========================================
+    
+function normalizePosts(tweets, account) {
+    function extractMedia(tweet) {
+        // Periksa beberapa kemungkinan struktur media dari provider.
+        const candidates = [
+            tweet.media,
+            tweet.extended_entities?.media,
+            tweet.entities?.media,
+            tweet.attachments?.media,
+            tweet.attachments?.photos,
+            tweet.photos
+        ];
 
-    function normalizePosts(tweets, account) {
-        return tweets
-            .filter(tweet => tweet && (
+        let mediaItems = [];
+
+        for (const candidate of candidates) {
+            if (Array.isArray(candidate) && candidate.length > 0) {
+                mediaItems = candidate;
+                break;
+            }
+        }
+
+        return mediaItems.map(item => {
+            if (typeof item === "string") {
+                return {
+                    url: item,
+                    type: "photo"
+                };
+            }
+
+            if (!item || typeof item !== "object") {
+                return null;
+            }
+
+            const mediaUrl =
+                item.media_url_https ||
+                item.media_url ||
+                item.image_url ||
+                item.imageUrl ||
+                item.url ||
+                item.preview_image_url ||
+                item.preview_image?.url ||
+                null;
+
+            if (!mediaUrl) return null;
+
+            return {
+                url: mediaUrl,
+                type:
+                    item.type ||
+                    item.media_type ||
+                    "photo"
+            };
+        }).filter(item => item && item.url);
+    }
+
+    return tweets
+        .filter(tweet => tweet && (
+            tweet.tweet_id || tweet.id
+        ))
+        .map(tweet => {
+            const postId = String(
                 tweet.tweet_id || tweet.id
-            ))
-            .map(tweet => {
-                const postId = String(
-                    tweet.tweet_id || tweet.id
-                );
+            );
 
-                const dateValue =
-                    tweet.created_at ||
-                    tweet.createdAt ||
-                    null;
+            const dateValue =
+                tweet.created_at ||
+                tweet.createdAt ||
+                null;
 
-                const parsedDate = dateValue
-                    ? new Date(dateValue)
+            const parsedDate = dateValue
+                ? new Date(dateValue)
+                : null;
+
+            const postedAt =
+                parsedDate &&
+                !Number.isNaN(parsedDate.getTime())
+                    ? parsedDate.toISOString()
                     : null;
 
-                const postedAt =
-                    parsedDate &&
-                    !Number.isNaN(parsedDate.getTime())
-                        ? parsedDate.toISOString()
-                        : null;
-
-                return {
-                    post_id: postId,
-                    account_id: account.id,
-                    username: account.username,
-                    post_text:
-                        tweet.full_text ||
-                        tweet.text ||
-                        "",
-                    media:
-                        tweet.media ||
-                        tweet.extended_entities?.media ||
-                        [],
-                    post_url:
-                        tweet.url ||
-                        `https://x.com/${account.username}/status/${postId}`,
-                    posted_at: postedAt
-                };
-            });
-    }
+            return {
+                post_id: postId,
+                account_id: account.id,
+                username: account.username,
+                post_text:
+                    tweet.full_text ||
+                    tweet.text ||
+                    tweet.content ||
+                    "",
+                media: extractMedia(tweet),
+                post_url:
+                    tweet.url ||
+                    `https://x.com/${account.username}/status/${postId}`,
+                posted_at: postedAt
+            };
+        });
+}
 
     // ==========================================
     // UPDATE FOTO PROFIL
