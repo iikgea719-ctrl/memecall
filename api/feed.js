@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SECRET_KEY;
 
     const CACHE_TTL = 300;
-    const ERROR_CACHE_TTL = 60;
+    const ERROR_CACHE_TTL = 300;
     const REFRESH_LOCK_SECONDS = 310;
 
     const cacheKey = "latest_feed:" + query;
