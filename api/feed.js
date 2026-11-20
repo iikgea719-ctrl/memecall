@@ -1,9 +1,7 @@
 
 export default async function handler(req, res) {
     if (req.method !== "GET") {
-        return res.status(405).json({
-            error: "Method not allowed"
-        });
+        return res.status(405).json({ error: "Method not allowed" });
     }
 
     const apiKey = process.env.SOCIALDATA_API_KEY;
@@ -14,21 +12,19 @@ export default async function handler(req, res) {
     const query = req.query.q ||
         '(memecoin OR "meme coin" OR pump.fun OR solana OR degen)';
 
-    // ==========================================
-    // CACHE CONFIGURATION
-    // ==========================================
-
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SECRET_KEY;
 
+    const PAGE_SIZE = 500;
     const CACHE_TTL = 300;
     const ERROR_CACHE_TTL = 300;
     const REFRESH_LOCK_SECONDS = 310;
 
-    const cacheKey = "latest_feed:" + query;
+    // Versi cache baru agar tidak memakai cache format lama.
+    const cacheKey = "latest_feed_v2:" + query;
 
     // ==========================================
-    // MONITORING MEMECALL
+    // MONITORING
     // ==========================================
 
     const monitorEvents = [];
@@ -105,9 +101,7 @@ export default async function handler(req, res) {
             module: "latest",
             provider: event.provider,
             role: event.role,
-            status: event.status === "success"
-                ? "active"
-                : "error",
+            status: event.status === "success" ? "active" : "error",
             last_checked_at: event.created_at,
             last_used_at: event.created_at,
             last_error: event.error_message
@@ -115,14 +109,11 @@ export default async function handler(req, res) {
 
         try {
             const results = await Promise.all([
-                fetch(
-                    `${baseUrl}/rest/v1/api_usage_logs`,
-                    {
-                        method: "POST",
-                        headers,
-                        body: JSON.stringify(logs)
-                    }
-                ),
+                fetch(`${baseUrl}/rest/v1/api_usage_logs`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(logs)
+                }),
 
                 fetch(
                     `${baseUrl}/rest/v1/api_provider_status?on_conflict=module,provider`,
@@ -151,15 +142,12 @@ export default async function handler(req, res) {
                 );
             }
         } catch (error) {
-            console.error(
-                "Latest monitoring error:",
-                error.message
-            );
+            console.error("Latest monitoring error:", error.message);
         }
     }
 
     // ==========================================
-    // SERVER-SIDE CACHE
+    // CACHE
     // ==========================================
 
     async function readFeedCache() {
@@ -184,7 +172,6 @@ export default async function handler(req, res) {
         }
 
         const rows = await response.json();
-
         return rows.length ? rows[0] : null;
     }
 
@@ -240,9 +227,7 @@ export default async function handler(req, res) {
                     },
                     body: JSON.stringify({
                         cache_key: cacheKey,
-                        cache_data: {
-                            payload
-                        },
+                        cache_data: { payload },
                         expires_at: expiresAt,
                         updated_at: new Date().toISOString()
                     })
@@ -258,7 +243,6 @@ export default async function handler(req, res) {
             }
 
             return true;
-
         } catch (error) {
             console.error("Cache save error:", error.message);
             return false;
@@ -275,12 +259,11 @@ export default async function handler(req, res) {
         }
 
         await flushMonitoring();
-
         return res.status(status).json(payload);
     }
 
     // ==========================================
-    // FILTER POSTINGAN RELEVAN
+    // FILTER POSTINGAN
     // ==========================================
 
     function isRelevant(tweet) {
@@ -299,31 +282,22 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
-    // HAPUS DUPLIKAT HASIL API
+    // HAPUS DUPLIKAT BERDASARKAN ID
     // ==========================================
 
     function removeDuplicates(tweets) {
-        return Array.from(
-            new Map(
-                tweets.map(tweet => {
-                    const normalizedText = (tweet.full_text || "")
-                        .toLowerCase()
-                        .replace(/https?:\/\/\S+/g, "")
-                        .replace(/@\w+/g, "")
-                        .replace(/[^a-z0-9]/g, "")
-                        .trim();
+        const unique = new Map();
 
-                    return [
-                        normalizedText || tweet.id,
-                        tweet
-                    ];
-                })
-            ).values()
-        );
+        for (const tweet of tweets) {
+            if (!tweet.id) continue;
+            unique.set(String(tweet.id), tweet);
+        }
+
+        return Array.from(unique.values());
     }
 
     // ==========================================
-    // URUTKAN TERBARU DI ATAS
+    // PENGURUTAN
     // ==========================================
 
     function sortTweets(tweets) {
@@ -334,12 +308,19 @@ export default async function handler(req, res) {
             const dateB =
                 new Date(b.created_at || 0).getTime() || 0;
 
-            return dateB - dateA;
+            if (dateA !== dateB) {
+                return dateB - dateA;
+            }
+
+            return String(b.id || "").localeCompare(
+                String(a.id || "")
+            );
         });
     }
 
     // ==========================================
     // GABUNGKAN ARSIP DAN POSTINGAN BARU
+    // Arsip lama selalu diprioritaskan.
     // ==========================================
 
     function mergeTweets(archivedTweets, newTweets) {
@@ -352,12 +333,199 @@ export default async function handler(req, res) {
         }
 
         for (const tweet of newTweets) {
-            if (tweet.id) {
-                combined.set(String(tweet.id), tweet);
+            const id = String(tweet.id || "");
+
+            if (id && !combined.has(id)) {
+                combined.set(id, tweet);
             }
         }
 
         return sortTweets(Array.from(combined.values()));
+    }
+
+    // ==========================================
+    // PAGINASI ARSIP SUPABASE
+    // ==========================================
+
+    async function getArchivedPage(beforeCreatedAt = null, beforeId = null) {
+        if (!supabaseUrl || !supabaseKey) {
+            throw new Error("Supabase archive credentials missing");
+        }
+
+        const params = new URLSearchParams({
+            select: "id,full_text,created_at,user,entities",
+            order: "created_at.desc,id.desc",
+            limit: String(PAGE_SIZE + 1)
+        });
+
+        if (beforeCreatedAt && beforeId) {
+            const cursorFilter =
+                `created_at.lt.${beforeCreatedAt},and(created_at.eq.${beforeCreatedAt},id.lt.${beforeId})`;
+
+            params.set("or", `(${cursorFilter})`);
+        }
+
+        const response = await fetch(
+            `${supabaseUrl.replace(/\/$/, "")}/rest/v1/latest_x_posts?${params.toString()}`,
+            {
+                headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`
+                }
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Archive read error: " + await response.text()
+            );
+        }
+
+        const rows = await response.json();
+
+        const hasMore = rows.length > PAGE_SIZE;
+        const pageTweets = rows.slice(0, PAGE_SIZE);
+
+        const lastTweet = pageTweets[pageTweets.length - 1];
+
+        return {
+            tweets: pageTweets,
+            hasMore,
+            nextCursor: hasMore && lastTweet
+                ? {
+                    created_at: lastTweet.created_at,
+                    id: String(lastTweet.id)
+                }
+                : null
+        };
+    }
+
+    async function buildArchivedResponse(newTweets) {
+        const archiveSaved =
+            await saveTweetsToSupabase(newTweets);
+
+        const archivePage =
+            await getArchivedPage();
+
+        const combinedTweets =
+            mergeTweets(archivePage.tweets, newTweets);
+
+        const pageTweets =
+            combinedTweets.slice(0, PAGE_SIZE);
+
+        const hasMore =
+            combinedTweets.length > PAGE_SIZE ||
+            archivePage.hasMore;
+
+        const lastTweet =
+            pageTweets[pageTweets.length - 1];
+
+        return {
+            archiveSaved,
+            tweets: pageTweets,
+            hasMore,
+            nextCursor: hasMore && lastTweet
+                ? {
+                    created_at: lastTweet.created_at,
+                    id: String(lastTweet.id)
+                }
+                : null
+        };
+    }
+
+    // ==========================================
+    // SIMPAN ARSIP TANPA MENIMPA ID LAMA
+    // ==========================================
+
+    async function saveTweetsToSupabase(tweets) {
+        if (!supabaseUrl || !supabaseKey) {
+            console.error("Supabase credentials missing");
+            return false;
+        }
+
+        const validTweets = tweets.filter(tweet => tweet.id);
+
+        if (!validTweets.length) {
+            return true;
+        }
+
+        const records = validTweets.map(tweet => ({
+            id: String(tweet.id),
+            full_text: tweet.full_text || "",
+            created_at: tweet.created_at || null,
+            user: tweet.user || {},
+            entities: tweet.entities || []
+        }));
+
+        try {
+            const response = await fetch(
+                `${supabaseUrl.replace(/\/$/, "")}/rest/v1/latest_x_posts?on_conflict=id`,
+                {
+                    method: "POST",
+                    headers: {
+                        apikey: supabaseKey,
+                        Authorization: `Bearer ${supabaseKey}`,
+                        "Content-Type": "application/json",
+                        Prefer: "resolution=ignore-duplicates,return=minimal"
+                    },
+                    body: JSON.stringify(records)
+                }
+            );
+
+            if (!response.ok) {
+                console.error(
+                    "Supabase archive error:",
+                    await response.text()
+                );
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.error("Supabase save error:", error);
+            return false;
+        }
+    }
+
+    // ==========================================
+    // HALAMAN ARSIP SELANJUTNYA
+    // Hanya membaca Supabase, tidak memanggil API X.
+    // ==========================================
+
+    const beforeCreatedAt = req.query.before_created_at;
+    const beforeId = req.query.before_id;
+
+    if (beforeCreatedAt || beforeId) {
+        if (!beforeCreatedAt || !beforeId) {
+            return res.status(400).json({
+                success: false,
+                error: "Cursor tidak lengkap"
+            });
+        }
+
+        try {
+            const page = await getArchivedPage(
+                beforeCreatedAt,
+                beforeId
+            );
+
+            return res.status(200).json({
+                success: true,
+                source: "Supabase Archive",
+                pageSize: PAGE_SIZE,
+                total: page.tweets.length,
+                hasMore: page.hasMore,
+                nextCursor: page.nextCursor,
+                tweets: page.tweets
+            });
+        } catch (error) {
+            console.error("Archive pagination error:", error.message);
+
+            return res.status(500).json({
+                success: false,
+                error: "Gagal mengambil halaman arsip"
+            });
+        }
     }
 
     // ==========================================
@@ -371,14 +539,12 @@ export default async function handler(req, res) {
             id: tweet.id,
             full_text: tweet.text || "",
             created_at: tweet.created_at || "",
-
             user: {
                 name: tweet.author?.name || "X User",
                 username: tweet.author?.username || "",
                 profile_image_url:
                     tweet.author?.profile_image_url || ""
             },
-
             entities: media.map(item => ({
                 type: item.type || "photo",
                 link:
@@ -410,9 +576,7 @@ export default async function handler(req, res) {
                     "author.profile_image_url,media.media_url_https,media.type"
             });
 
-            if (cursor) {
-                params.set("cursor", cursor);
-            }
+            if (cursor) params.set("cursor", cursor);
 
             providerRequestCounts.TwitterAPIs++;
 
@@ -421,8 +585,8 @@ export default async function handler(req, res) {
                 params.toString(),
                 {
                     headers: {
-                        "Authorization": `Bearer ${backupApiKey}`,
-                        "Accept": "application/json"
+                        Authorization: `Bearer ${backupApiKey}`,
+                        Accept: "application/json"
                     }
                 }
             );
@@ -431,18 +595,14 @@ export default async function handler(req, res) {
 
             if (!response.ok) {
                 throw new Error(
-                    data.message ||
-                    data.error ||
-                    "TwitterAPIs gagal"
+                    data.message || data.error || "TwitterAPIs gagal"
                 );
             }
 
             rawTweets.push(...(data.tweets || []));
             cursor = data.next_cursor || "";
 
-            if (!cursor || !data.tweets?.length) {
-                break;
-            }
+            if (!cursor || !data.tweets?.length) break;
         }
 
         return rawTweets.map(mapTwitterAPIsTweet);
@@ -454,21 +614,17 @@ export default async function handler(req, res) {
 
     function mapXDataTweet(tweet) {
         const author = tweet.author || {};
-        const media = Array.isArray(tweet.media)
-            ? tweet.media
-            : [];
+        const media = Array.isArray(tweet.media) ? tweet.media : [];
 
         return {
             id: tweet.id,
             full_text: tweet.text || "",
             created_at: tweet.created_at || "",
-
             user: {
                 name: author.name || "X User",
                 username: author.handle || "",
                 profile_image_url: author.avatar_url || ""
             },
-
             entities: media.map(item => ({
                 type: item.type || "photo",
                 link: item.url || "",
@@ -497,7 +653,7 @@ export default async function handler(req, res) {
                 method: "GET",
                 headers: {
                     "x-api-key": xdataApiKey,
-                    "Accept": "application/json"
+                    Accept: "application/json"
                 }
             }
         );
@@ -525,23 +681,17 @@ export default async function handler(req, res) {
 
     function mapGetXAPITweet(tweet) {
         const author = tweet.author || {};
-
-        const media = Array.isArray(tweet.media)
-            ? tweet.media
-            : [];
+        const media = Array.isArray(tweet.media) ? tweet.media : [];
 
         return {
             id: String(tweet.id || ""),
             full_text: tweet.text || "",
             created_at: tweet.createdAt || "",
-
             user: {
                 name: author.name || "X User",
                 username: author.userName || "",
-                profile_image_url:
-                    author.profilePicture || ""
+                profile_image_url: author.profilePicture || ""
             },
-
             entities: media.map(item => {
                 const mediaUrl = typeof item === "string"
                     ? item
@@ -583,8 +733,8 @@ export default async function handler(req, res) {
             {
                 method: "GET",
                 headers: {
-                    "Authorization": `Bearer ${getxApiKey}`,
-                    "Accept": "application/json"
+                    Authorization: `Bearer ${getxApiKey}`,
+                    Accept: "application/json"
                 }
             }
         );
@@ -610,138 +760,23 @@ export default async function handler(req, res) {
         }
 
         if (!Array.isArray(data.tweets)) {
-            throw new Error(
-                "Format respons GetXAPI tidak dikenali"
-            );
+            throw new Error("Format respons GetXAPI tidak dikenali");
         }
 
         return data.tweets.map(mapGetXAPITweet);
     }
 
     // ==========================================
-    // SUPABASE - PENYIMPANAN ARSIP
-    // ==========================================
-
-    async function saveTweetsToSupabase(tweets) {
-        if (!supabaseUrl || !supabaseKey) {
-            console.error("Supabase credentials missing");
-            return false;
-        }
-
-        const validTweets = tweets.filter(tweet => tweet.id);
-
-        if (!validTweets.length) {
-            return true;
-        }
-
-        const records = validTweets.map(tweet => ({
-            id: String(tweet.id),
-            full_text: tweet.full_text || "",
-            created_at: tweet.created_at || null,
-            user: tweet.user || {},
-            entities: tweet.entities || []
-        }));
-
-        try {
-            const response = await fetch(
-                `${supabaseUrl.replace(/\/$/, "")}/rest/v1/latest_x_posts?on_conflict=id`,
-                {
-                    method: "POST",
-                    headers: {
-                        apikey: supabaseKey,
-                        Authorization: `Bearer ${supabaseKey}`,
-                        "Content-Type": "application/json",
-                        Prefer:
-                            "resolution=merge-duplicates,return=minimal"
-                    },
-                    body: JSON.stringify(records)
-                }
-            );
-
-            if (!response.ok) {
-                console.error(
-                    "Supabase archive error:",
-                    await response.text()
-                );
-                return false;
-            }
-
-            return true;
-
-        } catch (error) {
-            console.error("Supabase save error:", error);
-            return false;
-        }
-    }
-
-    async function getArchivedTweets() {
-        if (!supabaseUrl || !supabaseKey) {
-            return [];
-        }
-
-        try {
-            const response = await fetch(
-                `${supabaseUrl.replace(/\/$/, "")}/rest/v1/latest_x_posts?select=id,full_text,created_at,user,entities&order=created_at.desc&limit=1000`,
-                {
-                    headers: {
-                        apikey: supabaseKey,
-                        Authorization: `Bearer ${supabaseKey}`
-                    }
-                }
-            );
-
-            if (!response.ok) {
-                console.error(
-                    "Archive read error:",
-                    await response.text()
-                );
-                return [];
-            }
-
-            return await response.json();
-
-        } catch (error) {
-            console.error("Archive read error:", error);
-            return [];
-        }
-    }
-
-    async function buildArchivedResponse(newTweets) {
-        const archiveSaved =
-            await saveTweetsToSupabase(newTweets);
-
-        const archivedTweets =
-            await getArchivedTweets();
-
-        const combinedTweets =
-            mergeTweets(archivedTweets, newTweets);
-
-        return {
-            archiveSaved,
-            tweets: combinedTweets
-        };
-    }
-
-    // ==========================================
-    // SISTEM BACKUP BERURUTAN
+    // BACKUP BERURUTAN
     // ==========================================
 
     async function tryFallbackProviders() {
         const errors = [];
 
         const providers = [
-            {
-                name: "TwitterAPIs",
-                fetch: fetchTwitterAPIs
-            },
-            {
-                name: "XDataAPI",
-                fetch: fetchXDataAPI
-            },
-            {
-                name: "GetXAPI",
-                fetch: fetchGetXAPI
-            }
+            { name: "TwitterAPIs", fetch: fetchTwitterAPIs },
+            { name: "XDataAPI", fetch: fetchXDataAPI },
+            { name: "GetXAPI", fetch: fetchGetXAPI }
         ];
 
         for (const provider of providers) {
@@ -749,12 +784,8 @@ export default async function handler(req, res) {
                 console.log("Trying backup:", provider.name);
 
                 const rawTweets = await provider.fetch();
-
-                const relevantTweets =
-                    rawTweets.filter(isRelevant);
-
-                const uniqueTweets =
-                    removeDuplicates(relevantTweets);
+                const relevantTweets = rawTweets.filter(isRelevant);
+                const uniqueTweets = removeDuplicates(relevantTweets);
 
                 if (!uniqueTweets.length) {
                     addMonitorEvent(
@@ -782,11 +813,9 @@ export default async function handler(req, res) {
 
                 return {
                     provider: provider.name,
-                    archiveSaved: result.archiveSaved,
-                    tweets: result.tweets,
+                    ...result,
                     errors
                 };
-
             } catch (error) {
                 addMonitorEvent(
                     provider.name,
@@ -800,16 +829,11 @@ export default async function handler(req, res) {
                     error.message
                 );
 
-                errors.push(
-                    `${provider.name}: ${error.message}`
-                );
+                errors.push(`${provider.name}: ${error.message}`);
             }
         }
 
-        return {
-            provider: null,
-            errors
-        };
+        return { provider: null, errors };
     }
 
     function sendFallbackResponse(result) {
@@ -820,6 +844,9 @@ export default async function handler(req, res) {
                 name => name !== result.provider
             ),
             total: result.tweets.length,
+            pageSize: PAGE_SIZE,
+            hasMore: result.hasMore,
+            nextCursor: result.nextCursor,
             archiveSaved: result.archiveSaved,
             tweets: result.tweets
         });
@@ -841,43 +868,35 @@ export default async function handler(req, res) {
             ? new Date(cacheSnapshot.expires_at).getTime()
             : 0;
 
-        // Cache masih berlaku: tidak memanggil API provider.
-        if (
-            cachedPayload &&
-            cacheExpiry > Date.now()
-        ) {
+        if (cachedPayload && cacheExpiry > Date.now()) {
             return res.status(200).json(cachedPayload);
         }
 
-        // Cache kedaluwarsa: klaim hak refresh.
         const refreshClaimed = await claimFeedRefresh();
 
         if (!refreshClaimed) {
-            // Proses lain sedang memperbarui cache.
-            // Gunakan cache lama jika tersedia.
             if (cachedPayload) {
                 return res.status(200).json(cachedPayload);
             }
 
-            // Belum ada cache lama: tampilkan arsip Supabase.
-            const archive = await getArchivedTweets();
+            const archive = await buildArchivedResponse([]);
 
             return res.status(200).json({
                 success: true,
                 activeSources: [],
                 backupSources: Object.keys(providerRoles),
-                total: archive.length,
+                total: archive.tweets.length,
+                pageSize: PAGE_SIZE,
+                hasMore: archive.hasMore,
+                nextCursor: archive.nextCursor,
                 archiveSaved: true,
                 warning: "Refresh sedang berlangsung. Menampilkan arsip tersimpan.",
-                tweets: archive
+                tweets: archive.tweets
             });
         }
-
     } catch (error) {
         console.error("Feed cache error:", error.message);
 
-        // Jika cache/lock gagal, jangan membanjiri API.
-        // Gunakan cache lama jika tersedia.
         const stalePayload =
             cacheSnapshot?.cache_data?.payload;
 
@@ -885,17 +904,29 @@ export default async function handler(req, res) {
             return res.status(200).json(stalePayload);
         }
 
-        const archive = await getArchivedTweets();
+        try {
+            const archive = await buildArchivedResponse([]);
 
-        return res.status(200).json({
-            success: true,
-            activeSources: [],
-            backupSources: Object.keys(providerRoles),
-            total: archive.length,
-            archiveSaved: true,
-            warning: "Cache tidak dapat diakses. Menampilkan arsip tersimpan.",
-            tweets: archive
-        });
+            return res.status(200).json({
+                success: true,
+                activeSources: [],
+                backupSources: Object.keys(providerRoles),
+                total: archive.tweets.length,
+                pageSize: PAGE_SIZE,
+                hasMore: archive.hasMore,
+                nextCursor: archive.nextCursor,
+                archiveSaved: true,
+                warning: "Cache tidak dapat diakses. Menampilkan arsip tersimpan.",
+                tweets: archive.tweets
+            });
+        } catch (archiveError) {
+            console.error("Archive fallback error:", archiveError.message);
+
+            return res.status(500).json({
+                success: false,
+                error: "Cache dan arsip tidak dapat diakses."
+            });
+        }
     }
 
     // ==========================================
@@ -906,9 +937,7 @@ export default async function handler(req, res) {
 
     try {
         if (!apiKey) {
-            throw new Error(
-                "SOCIALDATA_API_KEY belum dipasang"
-            );
+            throw new Error("SOCIALDATA_API_KEY belum dipasang");
         }
 
         let rawTweets = [];
@@ -920,9 +949,7 @@ export default async function handler(req, res) {
                 type: "Latest"
             });
 
-            if (cursor) {
-                params.set("cursor", cursor);
-            }
+            if (cursor) params.set("cursor", cursor);
 
             providerRequestCounts.SocialData++;
 
@@ -932,8 +959,8 @@ export default async function handler(req, res) {
                 {
                     method: "GET",
                     headers: {
-                        "Authorization": `Bearer ${apiKey}`,
-                        "Accept": "application/json"
+                        Authorization: `Bearer ${apiKey}`,
+                        Accept: "application/json"
                     }
                 }
             );
@@ -950,15 +977,12 @@ export default async function handler(req, res) {
             const pageTweets = data.tweets || [];
 
             rawTweets.push(...pageTweets);
-
             cursor = data.next_cursor || "";
 
-            if (!cursor || pageTweets.length === 0) {
-                break;
-            }
+            if (!cursor || pageTweets.length === 0) break;
         }
 
-        let tweets = rawTweets.map(tweet => {
+        const tweets = rawTweets.map(tweet => {
             const media = [
                 ...(tweet.extended_entities?.media || []),
                 ...(tweet.entities?.media || [])
@@ -971,14 +995,12 @@ export default async function handler(req, res) {
                     tweet.tweet_created_at ||
                     tweet.created_at ||
                     "",
-
                 user: {
                     name: tweet.user?.name || "X User",
                     username: tweet.user?.screen_name || "",
                     profile_image_url:
                         tweet.user?.profile_image_url_https || ""
                 },
-
                 entities: media.map(item => ({
                     type: item.type || "photo",
                     link:
@@ -994,20 +1016,13 @@ export default async function handler(req, res) {
             };
         });
 
-        const relevantTweets =
-            tweets.filter(isRelevant);
-
-        const uniqueTweets =
-            removeDuplicates(relevantTweets);
+        const relevantTweets = tweets.filter(isRelevant);
+        const uniqueTweets = removeDuplicates(relevantTweets);
 
         if (uniqueTweets.length > 0) {
             sortTweets(uniqueTweets);
 
-            addMonitorEvent(
-                "SocialData",
-                "success",
-                "search"
-            );
+            addMonitorEvent("SocialData", "success", "search");
             socialDataRecorded = true;
 
             const result =
@@ -1022,6 +1037,9 @@ export default async function handler(req, res) {
                     "GetXAPI"
                 ],
                 total: result.tweets.length,
+                pageSize: PAGE_SIZE,
+                hasMore: result.hasMore,
+                nextCursor: result.nextCursor,
                 archiveSaved: result.archiveSaved,
                 tweets: result.tweets
             });
@@ -1037,7 +1055,6 @@ export default async function handler(req, res) {
         throw new Error(
             "SocialData tidak menghasilkan postingan relevan"
         );
-
     } catch (error) {
         if (
             !socialDataRecorded &&
@@ -1060,27 +1077,38 @@ export default async function handler(req, res) {
             return sendFallbackResponse(fallback);
         }
 
-        // Jika semua API gagal, tampilkan arsip lama.
-        const archive =
-            await buildArchivedResponse([]);
+        try {
+            const archive =
+                await buildArchivedResponse([]);
 
-        return sendResponse(200, {
-            success: true,
-            activeSources: [],
-            backupSources: [
-                "SocialData",
-                "TwitterAPIs",
-                "XDataAPI",
-                "GetXAPI"
-            ],
-            total: archive.tweets.length,
-            archiveSaved: archive.archiveSaved,
-            warning: "Semua API gagal. Menampilkan arsip tersimpan.",
-            errors: [
-                error.message,
-                ...fallback.errors
-            ],
-            tweets: archive.tweets
-        });
+            return sendResponse(200, {
+                success: true,
+                activeSources: [],
+                backupSources: [
+                    "SocialData",
+                    "TwitterAPIs",
+                    "XDataAPI",
+                    "GetXAPI"
+                ],
+                total: archive.tweets.length,
+                pageSize: PAGE_SIZE,
+                hasMore: archive.hasMore,
+                nextCursor: archive.nextCursor,
+                archiveSaved: archive.archiveSaved,
+                warning: "Semua API gagal. Menampilkan arsip tersimpan.",
+                errors: [
+                    error.message,
+                    ...fallback.errors
+                ],
+                tweets: archive.tweets
+            });
+        } catch (archiveError) {
+            console.error("Archive fallback error:", archiveError.message);
+
+            return sendResponse(500, {
+                success: false,
+                error: "Semua API gagal dan arsip tidak dapat dibaca."
+            });
+        }
     }
 }
