@@ -15,7 +15,20 @@ export default async function handler(req, res) {
         '(memecoin OR "meme coin" OR pump.fun OR solana OR degen)';
 
     // ==========================================
-    // MONITORING MEMECALL - LATEST X DISCUSSIONS
+    // CACHE CONFIGURATION
+    // ==========================================
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SECRET_KEY;
+
+    const CACHE_TTL = 300;
+    const ERROR_CACHE_TTL = 60;
+    const REFRESH_LOCK_SECONDS = 90;
+
+    const cacheKey = "latest_feed:" + query;
+
+    // ==========================================
+    // MONITORING MEMECALL
     // ==========================================
 
     const monitorEvents = [];
@@ -53,9 +66,6 @@ export default async function handler(req, res) {
     }
 
     async function flushMonitoring() {
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const supabaseKey = process.env.SUPABASE_SECRET_KEY;
-
         if (
             !supabaseUrl ||
             !supabaseKey ||
@@ -148,8 +158,124 @@ export default async function handler(req, res) {
         }
     }
 
+    // ==========================================
+    // SERVER-SIDE CACHE
+    // ==========================================
+
+    async function readFeedCache() {
+        if (!supabaseUrl || !supabaseKey) {
+            throw new Error("Supabase cache credentials missing");
+        }
+
+        const response = await fetch(
+            `${supabaseUrl.replace(/\/$/, "")}/rest/v1/latest_feed_cache?select=cache_data,expires_at&cache_key=eq.${encodeURIComponent(cacheKey)}&limit=1`,
+            {
+                headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`
+                }
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Cache read failed: " + await response.text()
+            );
+        }
+
+        const rows = await response.json();
+
+        return rows.length ? rows[0] : null;
+    }
+
+    async function claimFeedRefresh() {
+        if (!supabaseUrl || !supabaseKey) {
+            throw new Error("Supabase lock credentials missing");
+        }
+
+        const response = await fetch(
+            `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/claim_latest_feed_refresh`,
+            {
+                method: "POST",
+                headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    p_cache_key: cacheKey,
+                    p_lock_seconds: REFRESH_LOCK_SECONDS
+                })
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Refresh lock failed: " + await response.text()
+            );
+        }
+
+        return await response.json() === true;
+    }
+
+    async function saveFeedCache(payload, ttl = CACHE_TTL) {
+        if (!supabaseUrl || !supabaseKey) {
+            return false;
+        }
+
+        try {
+            const expiresAt = new Date(
+                Date.now() + ttl * 1000
+            ).toISOString();
+
+            const response = await fetch(
+                `${supabaseUrl.replace(/\/$/, "")}/rest/v1/latest_feed_cache?on_conflict=cache_key`,
+                {
+                    method: "POST",
+                    headers: {
+                        apikey: supabaseKey,
+                        Authorization: `Bearer ${supabaseKey}`,
+                        "Content-Type": "application/json",
+                        Prefer: "resolution=merge-duplicates,return=minimal"
+                    },
+                    body: JSON.stringify({
+                        cache_key: cacheKey,
+                        cache_data: {
+                            payload
+                        },
+                        expires_at: expiresAt,
+                        updated_at: new Date().toISOString()
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                console.error(
+                    "Cache save failed:",
+                    await response.text()
+                );
+                return false;
+            }
+
+            return true;
+
+        } catch (error) {
+            console.error("Cache save error:", error.message);
+            return false;
+        }
+    }
+
     async function sendResponse(status, payload) {
+        if (status === 200 && payload.success === true) {
+            const ttl = payload.warning
+                ? ERROR_CACHE_TTL
+                : CACHE_TTL;
+
+            await saveFeedCache(payload, ttl);
+        }
+
         await flushMonitoring();
+
         return res.status(status).json(payload);
     }
 
@@ -449,7 +575,6 @@ export default async function handler(req, res) {
             product: "Latest"
         });
 
-        // Satu request saja untuk menghemat kredit.
         providerRequestCounts.GetXAPI++;
 
         const response = await fetch(
@@ -498,9 +623,6 @@ export default async function handler(req, res) {
     // ==========================================
 
     async function saveTweetsToSupabase(tweets) {
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const supabaseKey = process.env.SUPABASE_SECRET_KEY;
-
         if (!supabaseUrl || !supabaseKey) {
             console.error("Supabase credentials missing");
             return false;
@@ -553,9 +675,6 @@ export default async function handler(req, res) {
     }
 
     async function getArchivedTweets() {
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const supabaseKey = process.env.SUPABASE_SECRET_KEY;
-
         if (!supabaseUrl || !supabaseKey) {
             return [];
         }
@@ -703,6 +822,79 @@ export default async function handler(req, res) {
             total: result.tweets.length,
             archiveSaved: result.archiveSaved,
             tweets: result.tweets
+        });
+    }
+
+    // ==========================================
+    // CACHE CHECK + REFRESH LOCK
+    // ==========================================
+
+    let cacheSnapshot = null;
+
+    try {
+        cacheSnapshot = await readFeedCache();
+
+        const cachedPayload =
+            cacheSnapshot?.cache_data?.payload;
+
+        const cacheExpiry = cacheSnapshot?.expires_at
+            ? new Date(cacheSnapshot.expires_at).getTime()
+            : 0;
+
+        // Cache masih berlaku: tidak memanggil API provider.
+        if (
+            cachedPayload &&
+            cacheExpiry > Date.now()
+        ) {
+            return res.status(200).json(cachedPayload);
+        }
+
+        // Cache kedaluwarsa: klaim hak refresh.
+        const refreshClaimed = await claimFeedRefresh();
+
+        if (!refreshClaimed) {
+            // Proses lain sedang memperbarui cache.
+            // Gunakan cache lama jika tersedia.
+            if (cachedPayload) {
+                return res.status(200).json(cachedPayload);
+            }
+
+            // Belum ada cache lama: tampilkan arsip Supabase.
+            const archive = await getArchivedTweets();
+
+            return res.status(200).json({
+                success: true,
+                activeSources: [],
+                backupSources: Object.keys(providerRoles),
+                total: archive.length,
+                archiveSaved: true,
+                warning: "Refresh sedang berlangsung. Menampilkan arsip tersimpan.",
+                tweets: archive
+            });
+        }
+
+    } catch (error) {
+        console.error("Feed cache error:", error.message);
+
+        // Jika cache/lock gagal, jangan membanjiri API.
+        // Gunakan cache lama jika tersedia.
+        const stalePayload =
+            cacheSnapshot?.cache_data?.payload;
+
+        if (stalePayload) {
+            return res.status(200).json(stalePayload);
+        }
+
+        const archive = await getArchivedTweets();
+
+        return res.status(200).json({
+            success: true,
+            activeSources: [],
+            backupSources: Object.keys(providerRoles),
+            total: archive.length,
+            archiveSaved: true,
+            warning: "Cache tidak dapat diakses. Menampilkan arsip tersimpan.",
+            tweets: archive
         });
     }
 
